@@ -19,8 +19,8 @@ PWAs need HTTPS (localhost is exempt) for install and offline use.
 
 ## Features
 
-- Roster with status badges, filters, and sort by longest since contact
-- Profiles with green and red flag tags, and bullet-point notes
+- One People tab: search names, jobs, and notes; filter by status; sort by longest since contact; notes and flag preview on each card; an Archived section at the bottom
+- Profiles with green and red flag tags (tap to toggle on or off), and bullet-point notes
 - Date log timeline with 1 to 5 star ratings and follow-up status
 - Voice notes using the browser Web Speech API, turned into bullets on-device
 - Fit tab: say what you want (must-haves, nice-to-haves, deal-breakers, your own words) and get a Keep pursuing, Keep watching, or Consider letting go call for each person, with reasons
@@ -98,3 +98,41 @@ It is a rule-based reader with a fixed vocabulary, not an AI model, so it handle
 - It skips statements about traits you do NOT want ("someone who is not ambitious") rather than guessing, and lists them under "Parts I did not use" so nothing is dropped silently.
 - If a suggestion would replace a level you already chose, it starts unticked so a quick tap cannot undo a deliberate choice.
 - Anything it cannot read is shown to you. It never invents criteria from noise.
+
+## Contact history
+
+Each person has a contact history instead of a single "last contact" stamp.
+
+- Add a contact on any past date (the date picker stops at today) with an optional note like "Called".
+- Delete any entry, so a wrong date is easy to fix.
+- "Last contact" is worked out from the history, never stored separately, so it can never disagree with it. Logged dates also count as contact: deleting a logged date rolls last contact back automatically.
+- Adding a new match records "Matched" as the first contact, on today's date. Delete it if it is wrong.
+- Dates use your own calendar day, not UTC, so a late-evening entry never lands on tomorrow. This is tested in New York, UTC, Auckland, and Kiritimati.
+- Data saved by earlier versions is upgraded automatically: the old single last-contact date becomes one history entry.
+
+## Updating the app on your phone
+
+An installed PWA keeps its old files until it updates. After redeploying `dist/`:
+
+1. Close the app completely (swipe it away), then reopen it once while online. The new version downloads in the background.
+2. Close and reopen it a second time to run the new version.
+3. If it still looks old: iPhone, delete the Home Screen icon and re-add it from Safari (your data is stored per site and survives this only if you use the same URL, so export a backup first from Insights). Android, long-press the icon, App info, Storage, Clear cache.
+
+## Stages, and letting someone go
+
+Every person is in one stage: **Talking stage** (getting to know each other, no dates yet), **Texting**, **Planning date**, **Dating**, **On hold**, or **Let go / ended**. New matches start in Talking stage.
+
+Choosing **Let go / ended** on a profile opens a short form: an optional reason (not compatible, they ghosted or faded out, I lost interest, they ended it, red flags, wrong timing, other), the date it ended, and an optional note. Nothing changes until you tap Mark as ended, and Cancel leaves everything as it was. If you pick no reason, none is recorded.
+
+What happens to someone who has ended:
+
+- They leave the main list and the Fit tab, and move to a **Let go / ended** section. A "Let go" filter shows just them, most recently ended first.
+- The app never nags you to reply to them.
+- Their dates stay in your date history, in your average rating, and in what the app learns about you. A date you rated is real information about your taste even if the relationship did not last.
+- You cannot log a new date with them, but you can still edit their old dates.
+- Insights shows a "Why things ended" breakdown. It tells you when there are only one or two reasons so far, because a pattern from that few is not really a pattern.
+- To reopen someone, open their profile and pick any stage. The reason is cleared.
+
+**Archive** is separate: it just hides someone you may come back to, and does not record an outcome.
+
+Data saved before this version loads unchanged. A stage that no longer exists, or none at all, becomes Texting.

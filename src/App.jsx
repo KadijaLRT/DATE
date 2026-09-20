@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import {
-  Users, BookHeart, CalendarHeart, BarChart3, Plus, X, Mic, Square,
-  Star, Trash2, Archive, ArchiveRestore, Download, Upload, Check, Scale
+  Users, CalendarHeart, BarChart3, Plus, X, Mic, Square,
+  Star, Trash2, Archive, ArchiveRestore, Download, Upload, Scale
 } from 'lucide-react'
 import {
-  useStore, STATUSES, TAGS, agoLabel, daysSince, fmtDate
+  useStore, STATUSES, ACTIVE_STATUSES, END_REASONS, isActive, TAGS, agoLabel, daysSince, fmtDate, lastContactOf, todayDay
 } from './store.js'
 import { useSpeech, summarizeToBullets } from './useSpeech.js'
 import { TRAITS, PRIORITY, VERDICT, evaluate, hasCriteria } from './fit.js'
@@ -150,7 +150,7 @@ function VoiceBox({ onBullets }) {
 function QuickAdd({ onSave, onClose }) {
   const [name, setName] = useState('')
   const [met, setMet] = useState('')
-  const [status, setStatus] = useState('texting')
+  const [status, setStatus] = useState('talking')
   const ref = useRef(null)
 
   const save = () => {
@@ -184,9 +184,9 @@ function QuickAdd({ onSave, onClose }) {
           onKeyDown={(e) => e.key === 'Enter' && save()}
         />
       </label>
-      <span className="lbl">Status</span>
-      <div className="tagpick" style={{ marginBottom: 18 }}>
-        {STATUSES.map((s) => (
+      <span className="lbl">Where things stand</span>
+      <div className="tagpick" style={{ marginBottom: 6 }}>
+        {ACTIVE_STATUSES.map((s) => (
           <button
             key={s.id}
             type="button"
@@ -198,8 +198,160 @@ function QuickAdd({ onSave, onClose }) {
           </button>
         ))}
       </div>
+      <p className="hint" style={{ margin: '0 0 18px' }}>
+        {ACTIVE_STATUSES.find((s) => s.id === status)?.hint}
+      </p>
       <button className="btn primary" onClick={save}>Add to roster</button>
     </Sheet>
+  )
+}
+
+
+function ContactLog({ person, dates, store }) {
+  const [day, setDay] = useState(todayDay())
+  const [note, setNote] = useState('')
+  const last = lastContactOf(person, dates)
+  const items = [...(person.contacts || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+
+  const add = () => {
+    if (!day) return
+    store.addContact(person.id, day, note)
+    setNote('')
+    setDay(todayDay())
+  }
+
+  return (
+    <div>
+      <p className="hint" style={{ margin: '0 0 10px' }}>
+        Last contact: {last ? `${agoLabel(last)} (${fmtDate(last)})` : 'none recorded'}. Logged dates count too.
+      </p>
+
+      <div className="two" style={{ alignItems: 'end' }}>
+        <label className="field" style={{ marginBottom: 0 }}>
+          <span>When</span>
+          <input className="in" type="date" value={day} max={todayDay()} onChange={(e) => setDay(e.target.value)} />
+        </label>
+        <label className="field" style={{ marginBottom: 0 }}>
+          <span>Note (optional)</span>
+          <input className="in" value={note} placeholder="Called, texted…" onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && add()} />
+        </label>
+      </div>
+      <button type="button" className="btn ghost" style={{ marginTop: 10, width: '100%' }} onClick={add} disabled={!day}>
+        <Plus size={18} /> Add contact on this date
+      </button>
+
+      {items.length > 0 && (
+        <ul className="notes" style={{ marginTop: 12 }}>
+          {items.map((c) => (
+            <li key={c.id}>
+              <span>
+                <strong>{fmtDate(c.date)}</strong>
+                {c.note ? `, ${c.note}` : ''}
+              </span>
+              <button className="icon-btn" aria-label={`Delete contact on ${fmtDate(c.date)}`}
+                onClick={() => store.deleteContact(person.id, c.id)}>
+                <X size={16} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+
+function StatusPicker({ person, store }) {
+  const [ending, setEnding] = useState(false)
+  const [reason, setReason] = useState(person.end?.reason || '')
+  const [note, setNote] = useState(person.end?.note || '')
+  const [when, setWhen] = useState(person.end?.date || todayDay())
+  const ended = person.status === 'ended'
+
+  const pick = (s) => {
+    if (s.id === 'ended') {
+      setEnding(true)
+      return
+    }
+    setEnding(false)
+    store.setStatus(person.id, s.id) // also clears any end reason
+  }
+
+  const confirmEnd = () => {
+    store.setStatus(person.id, 'ended', { reason, note, date: when })
+    setEnding(false)
+  }
+
+  const current = STATUSES.find((s) => s.id === person.status)
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <span className="lbl">Where things stand</span>
+      <div className="tagpick">
+        {STATUSES.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className={s.id === 'ended' ? 'red' : 'green'}
+            aria-pressed={person.status === s.id || (ending && s.id === 'ended')}
+            onClick={() => pick(s)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {current && !ending && <p className="hint" style={{ margin: '8px 0 0' }}>{current.hint}</p>}
+
+      {ended && !ending && (
+        <div className="adj" style={{ marginTop: 10 }}>
+          <strong>Ended {fmtDate(person.end?.date)}</strong>
+          <div>{END_REASONS.find((r) => r.id === person.end?.reason)?.label || 'No reason given'}</div>
+          {person.end?.note && <div style={{ marginTop: 4 }}>{person.end.note}</div>}
+          <button type="button" className="btn ghost" style={{ marginTop: 8, padding: '8px 12px' }}
+            onClick={() => { setReason(person.end?.reason || ''); setNote(person.end?.note || ''); setWhen(person.end?.date || todayDay()); setEnding(true) }}>
+            Edit why
+          </button>
+          <p className="hint" style={{ margin: '8px 0 0' }}>
+            To reopen this, pick a stage above. The reason is cleared when you do.
+          </p>
+        </div>
+      )}
+
+      {ending && (
+        <div className="stat" style={{ marginTop: 12 }} role="group" aria-label="Why did it end">
+          <h4>Let go of {person.name || 'this person'}?</h4>
+          <p className="hint" style={{ marginTop: 0 }}>
+            They will move out of your active list and the Fit tab. Their dates stay and still help the app learn
+            what you like.
+          </p>
+          <span className="lbl">Why it ended (optional)</span>
+          <div className="tagpick" style={{ marginBottom: 12 }}>
+            {END_REASONS.map((r) => (
+              <button key={r.id} type="button" className="red" aria-pressed={reason === r.id}
+                onClick={() => setReason(reason === r.id ? '' : r.id)}>
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <label className="field">
+            <span>When</span>
+            <input className="in" type="date" value={when} max={todayDay()} onChange={(e) => setWhen(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Note (optional)</span>
+            <textarea className="in" style={{ minHeight: 70 }} value={note} onChange={(e) => setNote(e.target.value)}
+              placeholder="Anything worth remembering for next time" />
+          </label>
+          <div className="btnrow">
+            <button className="btn ghost" onClick={() => setEnding(false)}>Cancel</button>
+            <button className="btn primary" onClick={confirmEnd}>
+              {ended ? 'Save changes' : 'Mark as ended'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -223,20 +375,7 @@ function PersonSheet({ person, dates, store, onClose, onLogDate }) {
 
   return (
     <Sheet title={person.name || 'Profile'} onClose={onClose}>
-      <span className="lbl">Status</span>
-      <div className="tagpick" style={{ marginBottom: 16 }}>
-        {STATUSES.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            className="green"
-            aria-pressed={person.status === s.id}
-            onClick={() => set({ status: s.id })}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
+      <StatusPicker key={person.id + ':' + person.status} person={person} store={store} />
 
       <label className="field">
         <span>Name</span>
@@ -290,12 +429,10 @@ function PersonSheet({ person, dates, store, onClose, onLogDate }) {
         <button className="btn ghost" onClick={addNote} aria-label="Add note"><Plus size={18} /></button>
       </div>
 
-      <div className="section">Contact</div>
-      <p className="hint" style={{ margin: '0 0 8px' }}>Last contact: {agoLabel(person.lastContact)}</p>
-      <div className="btnrow">
-        <button className="btn ghost" onClick={() => set({ lastContact: new Date().toISOString() })}>
-          <Check size={18} /> We talked today
-        </button>
+      <div className="section">Contact history</div>
+      <ContactLog person={person} dates={dates} store={store} />
+
+      <div className="btnrow" style={{ marginTop: 12 }}>
         <button className="btn rose" onClick={onLogDate}>
           <CalendarHeart size={18} /> Log a date
         </button>
@@ -372,7 +509,7 @@ function DateSheet({ people, initial, defaultPersonId, store, onClose, onCheckin
         <span>Who</span>
         <select className="in" value={personId} onChange={(e) => setPersonId(e.target.value)}>
           {people.map((p) => (
-            <option key={p.id} value={p.id}>{p.name || 'Unnamed'}</option>
+            <option key={p.id} value={p.id}>{(p.name || 'Unnamed') + (p.status === 'ended' ? ' (let go)' : '')}</option>
           ))}
         </select>
       </label>
@@ -485,122 +622,157 @@ const FOLLOW_LABEL = {
   done: 'Not continuing'
 }
 
-function Roster({ people, onOpen }) {
+function PersonCard({ p, dates, onOpen }) {
+  const s = statusOf(p.status)
+  const ended = p.status === 'ended'
+  const lc = lastContactOf(p, dates)
+  const d = daysSince(lc)
+  // Never nag about replying to someone you have let go.
+  const due = !ended && d !== null && d >= 3
+  const details = [p.age && `${p.age}`, p.job, p.location, p.met && `via ${p.met}`].filter(Boolean).join(', ')
+  const reason = END_REASONS.find((r) => r.id === p.end?.reason)?.label
+  return (
+    <button className="person" style={{ '--edge': s.color }} onClick={() => onOpen(p.id)}>
+      <div className="row">
+        <h3>{p.name || 'Unnamed'}</h3>
+        <span className="status">{s.label}</span>
+      </div>
+      <div className="meta">{details || 'No details yet'}</div>
+      {ended && (
+        <div className="reply" style={{ color: 'var(--ink)' }}>
+          Ended {fmtDate(p.end?.date)}{reason ? `: ${reason}` : ''}
+        </div>
+      )}
+      {p.notes.length > 0 && (
+        <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 14 }}>
+          {p.notes.slice(0, 2).map((n, i) => <li key={i}>{n}</li>)}
+          {p.notes.length > 2 && <li className="hint">+{p.notes.length - 2} more</li>}
+        </ul>
+      )}
+      {p.tags.length > 0 && (
+        <div className="mini">
+          {p.tags.map((id) => {
+            const t = tagOf(id)
+            return t ? <span key={id} className={'tag ' + t.kind}>{t.label}</span> : null
+          })}
+        </div>
+      )}
+      <div className={'reply' + (due ? ' due' : '')}>
+        {lc ? `Last contact ${agoLabel(lc)}` : 'No contact recorded'}
+        {due ? ', maybe reply?' : ''}
+      </div>
+    </button>
+  )
+}
+
+function People({ people, dates, onOpen, store }) {
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('contact')
+  const [q, setQ] = useState('')
 
-  const list = useMemo(() => {
-    let l = people.filter((p) => !p.archived)
-    if (filter !== 'all') l = l.filter((p) => p.status === filter)
+  const query = q.trim().toLowerCase()
+
+  const { list, ended, archived, endedTotal } = useMemo(() => {
+    const matches = (p) =>
+      !query || [p.name, p.job, p.met, p.location, ...(p.notes || [])].join(' ').toLowerCase().includes(query)
+
+    let active = people.filter((p) => isActive(p) && matches(p))
     if (sort === 'contact') {
-      l = [...l].sort((a, b) => new Date(a.lastContact) - new Date(b.lastContact))
+      // people with NO recorded contact sort first: they are the ones most likely to need attention
+      active = [...active].sort((a, b) => (lastContactOf(a, dates) || '').localeCompare(lastContactOf(b, dates) || ''))
     } else if (sort === 'name') {
-      l = [...l].sort((a, b) => a.name.localeCompare(b.name))
+      active = [...active].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     } else {
-      l = [...l].sort((a, b) => new Date(b.created) - new Date(a.created))
+      active = [...active].sort((a, b) => new Date(b.created) - new Date(a.created))
     }
-    return l
-  }, [people, filter, sort])
+
+    // Most recently ended first.
+    const endedList = people
+      .filter((p) => p.status === 'ended' && !p.archived && matches(p))
+      .sort((a, b) => (b.end?.date || '').localeCompare(a.end?.date || ''))
+    const archivedList = people.filter((p) => p.archived && matches(p))
+    const endedTotal = people.filter((p) => p.status === 'ended' && !p.archived).length
+
+    if (filter === 'ended') return { list: endedList, ended: [], archived: [], endedTotal }
+    if (filter !== 'all') {
+      return { list: active.filter((p) => p.status === filter), ended: [], archived: [], endedTotal }
+    }
+    return { list: active, ended: endedList, archived: archivedList, endedTotal }
+  }, [people, dates, filter, sort, query])
+
+  const totalActive = people.filter(isActive).length
 
   return (
     <>
+      <input
+        className="in"
+        placeholder="Search names, jobs, notes"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        aria-label="Search people"
+        style={{ marginBottom: 12 }}
+      />
       <div className="filters" role="group" aria-label="Filter by status">
         <button className="chip" aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>All</button>
-        {STATUSES.map((s) => (
+        {ACTIVE_STATUSES.map((s) => (
           <button key={s.id} className="chip" aria-pressed={filter === s.id} onClick={() => setFilter(s.id)}>
             {s.label}
           </button>
         ))}
+        <button className="chip" aria-pressed={filter === 'ended'} onClick={() => setFilter('ended')}>
+          Let go{endedTotal > 0 ? ` (${endedTotal})` : ''}
+        </button>
       </div>
-      <div className="sortrow">
-        Sort by
-        <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort order">
-          <option value="contact">Longest since contact</option>
-          <option value="recent">Newest match</option>
-          <option value="name">Name</option>
-        </select>
-      </div>
+      {filter !== 'ended' && (
+        <div className="sortrow">
+          Sort by
+          <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort order">
+            <option value="contact">Longest since contact</option>
+            <option value="recent">Newest match</option>
+            <option value="name">Name</option>
+          </select>
+        </div>
+      )}
 
       {list.length === 0 ? (
         <div className="empty">
-          <h3>{people.filter((p) => !p.archived).length === 0 ? 'Your roster is empty' : 'No one matches this filter'}</h3>
-          <p>Tap Add match to log someone in under ten seconds.</p>
+          <h3>
+            {filter === 'ended'
+              ? query ? 'No one matches your search' : 'No one has ended yet'
+              : totalActive === 0 && !query
+                ? 'No one yet'
+                : query
+                  ? 'No one matches your search'
+                  : 'No one matches this filter'}
+          </h3>
+          <p>
+            {filter === 'ended'
+              ? 'People you mark as let go or broke up with show up here.'
+              : totalActive === 0 && !query
+                ? 'Tap Add match to log someone in under ten seconds.'
+                : 'Try clearing the search or filter.'}
+          </p>
         </div>
       ) : (
-        list.map((p) => {
-          const s = statusOf(p.status)
-          const d = daysSince(p.lastContact)
-          const due = d !== null && d >= 3
-          return (
-            <button key={p.id} className="person" style={{ '--edge': s.color }} onClick={() => onOpen(p.id)}>
-              <div className="row">
-                <h3>{p.name || 'Unnamed'}</h3>
-                <span className="status">{s.label}</span>
-              </div>
-              <div className="meta">
-                {[p.age && `${p.age}`, p.job, p.met && `via ${p.met}`].filter(Boolean).join(', ') || 'No details yet'}
-              </div>
-              {p.tags.length > 0 && (
-                <div className="mini">
-                  {p.tags.slice(0, 4).map((id) => {
-                    const t = tagOf(id)
-                    return t ? <span key={id} className={'tag ' + t.kind}>{t.label}</span> : null
-                  })}
-                </div>
-              )}
-              <div className={'reply' + (due ? ' due' : '')}>
-                Last contact {agoLabel(p.lastContact)}
-                {due ? ', maybe reply?' : ''}
-              </div>
-            </button>
-          )
-        })
+        list.map((p) => <PersonCard key={p.id} p={p} dates={dates} onOpen={onOpen} />)
       )}
-    </>
-  )
-}
 
-function CRM({ people, onOpen, store }) {
-  const archived = people.filter((p) => p.archived)
-  const [q, setQ] = useState('')
-  const active = people
-    .filter((p) => !p.archived)
-    .filter((p) => (p.name + p.job + p.met).toLowerCase().includes(q.toLowerCase()))
-
-  return (
-    <>
-      <input className="in" placeholder="Search profiles" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search profiles" style={{ marginBottom: 14 }} />
-      {active.length === 0 && (
-        <div className="empty"><h3>No profiles found</h3><p>Add someone with the Add match button.</p></div>
+      {ended.length > 0 && (
+        <>
+          <div className="section">Let go / ended</div>
+          {ended.map((p) => <PersonCard key={p.id} p={p} dates={dates} onOpen={onOpen} />)}
+        </>
       )}
-      {active.map((p) => (
-        <button key={p.id} className="person" style={{ '--edge': statusOf(p.status).color }} onClick={() => onOpen(p.id)}>
-          <div className="row">
-            <h3>{p.name || 'Unnamed'}</h3>
-            <span className="meta">{p.location}</span>
-          </div>
-          {p.notes.length > 0 && (
-            <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 14 }}>
-              {p.notes.slice(0, 3).map((n, i) => <li key={i}>{n}</li>)}
-              {p.notes.length > 3 && <li className="hint">+{p.notes.length - 3} more</li>}
-            </ul>
-          )}
-          <div className="mini">
-            {p.tags.map((id) => {
-              const t = tagOf(id)
-              return t ? <span key={id} className={'tag ' + t.kind}>{t.label}</span> : null
-            })}
-          </div>
-        </button>
-      ))}
 
       {archived.length > 0 && (
         <>
           <div className="section">Archived</div>
           {archived.map((p) => (
             <div key={p.id} className="person" style={{ '--edge': 'var(--line)' }}>
-              <div className="row">
-                <h3>{p.name || 'Unnamed'}</h3>
+              <div className="row" style={{ alignItems: 'center' }}>
+                <button style={{ textAlign: 'left', flex: 1 }} onClick={() => onOpen(p.id)}>
+                  <h3>{p.name || 'Unnamed'}</h3>
+                </button>
                 <button className="btn ghost" onClick={() => store.updatePerson(p.id, { archived: false })}>
                   <ArchiveRestore size={16} /> Restore
                 </button>
@@ -664,6 +836,9 @@ function Insights({ data, store }) {
     arr.forEach((k) => { if (k) m[k] = (m[k] || 0) + 1 })
     return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 5)
   }
+  const endedPeople = people.filter((p) => p.status === 'ended')
+  const endReasons = count(endedPeople.map((p) => p.end?.reason).filter((r) => r && r !== ''))
+  const noReason = endedPeople.filter((p) => !p.end?.reason).length
   const meets = count(people.map((p) => (p.met || '').trim().toLowerCase()))
   const tagCounts = count(people.flatMap((p) => p.tags))
   const maxMeet = meets[0]?.[1] || 1
@@ -705,10 +880,37 @@ function Insights({ data, store }) {
       <div className="stat">
         <h4>Overview</h4>
         <div className="two">
-          <div><div className="bignum">{people.filter((p) => !p.archived).length}</div><div className="hint">active people</div></div>
+          <div><div className="bignum">{people.filter(isActive).length}</div><div className="hint">active people</div></div>
           <div><div className="bignum">{dates.length}</div><div className="hint">dates logged</div></div>
         </div>
+        {endedPeople.length > 0 && (
+          <p className="hint" style={{ margin: '10px 0 0' }}>
+            {endedPeople.length} let go. Their dates still count in your averages and in what the app learns.
+          </p>
+        )}
       </div>
+
+      {endedPeople.length > 0 && (
+        <div className="stat">
+          <h4>Why things ended</h4>
+          {endReasons.map(([id, n]) => (
+            <div className="bar" key={id}>
+              <span>{END_REASONS.find((r) => r.id === id)?.label || id}</span>
+              <div className="track"><div className="fill" style={{ width: `${(n / endReasons[0][1]) * 100}%` }} /></div>
+              <span>{n}</span>
+            </div>
+          ))}
+          {noReason > 0 && (
+            <p className="hint" style={{ margin: '8px 0 0' }}>{noReason} with no reason recorded.</p>
+          )}
+          {endReasons.length > 0 && endedPeople.length - noReason < 3 && (
+            <p className="hint" style={{ margin: '8px 0 0' }}>
+              Only {endedPeople.length - noReason} reason{endedPeople.length - noReason === 1 ? '' : 's'} so far, so
+              treat this as a hint, not a pattern.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="stat">
         <h4>Average date rating</h4>
@@ -1061,7 +1263,7 @@ function Fit({ data, store, onOpen }) {
     store.setCriteria({ dealTags: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] })
   }
 
-  const active = people.filter((p) => !p.archived)
+  const active = people.filter(isActive)
   const learning = data.learning !== false
   const model = useMemo(() => buildModel(data), [data])
   const scorer = useMemo(() => {
@@ -1289,8 +1491,7 @@ function Fit({ data, store, onOpen }) {
 /* ---------- root ---------- */
 
 const TABS = [
-  { id: 'roster', label: 'Roster', icon: Users, sub: 'Who is active right now' },
-  { id: 'crm', label: 'Profiles', icon: BookHeart, sub: 'Details, flags, and notes' },
+  { id: 'roster', label: 'People', icon: Users, sub: 'Everyone you are talking to' },
   { id: 'dates', label: 'Dates', icon: CalendarHeart, sub: 'Your date history' },
   { id: 'fit', label: 'Fit', icon: Scale, sub: 'Do they match what you want?' },
   { id: 'insights', label: 'Insights', icon: BarChart3, sub: 'Patterns over time' }
@@ -1304,7 +1505,13 @@ export default function App() {
 
   const current = TABS.find((t) => t.id === tab)
   const person = sheet?.personId ? data.people.find((p) => p.id === sheet.personId) : null
-  const activePeople = data.people.filter((p) => !p.archived)
+  const activePeople = data.people.filter(isActive)
+  // New dates can only be logged with people you are still seeing. But an EXISTING date must always show its own
+  // person, even if they have since been let go or archived, or the dropdown would display someone else.
+  const datePeople = (existing) => {
+    const owner = existing ? data.people.find((p) => p.id === existing.personId) : null
+    return owner && !activePeople.some((p) => p.id === owner.id) ? [...activePeople, owner] : activePeople
+  }
 
   const fabLabel = tab === 'dates' ? 'Log date' : 'Add match'
   const onFab = () =>
@@ -1318,8 +1525,7 @@ export default function App() {
       </header>
 
       <main className="scroll">
-        {tab === 'roster' && <Roster people={data.people} onOpen={(id) => setSheet({ type: 'person', personId: id })} />}
-        {tab === 'crm' && <CRM people={data.people} store={store} onOpen={(id) => setSheet({ type: 'person', personId: id })} />}
+        {tab === 'roster' && <People people={data.people} dates={data.dates} store={store} onOpen={(id) => setSheet({ type: 'person', personId: id })} />}
         {tab === 'dates' && <DateLog people={data.people} dates={data.dates} onEdit={(d) => setSheet({ type: 'date', date: d })} />}
         {tab === 'fit' && <Fit data={data} store={store} onOpen={(id) => setSheet({ type: 'person', personId: id })} />}
         {tab === 'insights' && <Insights data={data} store={store} />}
@@ -1367,7 +1573,7 @@ export default function App() {
 
       {sheet?.type === 'date' && (
         <DateSheet
-          people={activePeople}
+          people={datePeople(sheet.date)}
           initial={sheet.date}
           defaultPersonId={sheet.defaultPersonId}
           store={store}
