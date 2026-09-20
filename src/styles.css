@@ -170,3 +170,7 @@ textarea.in { min-height: 90px; resize: vertical; }
 .fb .chip { padding: 6px 14px; }
 .switch { display: flex; align-items: center; gap: 10px; font-size: 15px; }
 .switch input { width: 20px; height: 20px; accent-color: var(--rose); }
+
+.sug { margin-bottom: 10px; }
+.sug .switch { width: 100%; }
+.sug .switch .in { flex: 1; }

@@ -76,3 +76,25 @@ All learning runs on your device with transparent arithmetic. There is no AI mod
 - Ratings are subjective and shift with your mood. Treat the output as a second opinion.
 
 Turn off "Let learning adjust my scores" on the Fit tab any time to score from only what you typed. "Reset what I learned" erases feedback and check-ins but keeps your people and dates.
+
+## The description box and keyword boxes on the Fit tab
+
+There are three fields under "Add your own keywords" and "Describe your ideal partner".
+
+- **Good signs to look for** (affects score): words you want to see. If they appear in someone's notes or date impressions, their fit score goes up.
+- **Red lines** (affects verdict): words that mean no. If any appear, the person is marked "Consider letting go" regardless of score. Negations such as "doesn't", "never", or "does not really" before the word are recognised, so "doesn't smoke" will not trigger "smokes".
+- **Describe your ideal partner** (suggests, never applies by itself): write plain sentences, then tap "Read my note and suggest criteria". The app proposes quality settings and keywords, and nothing changes until you tick what you want and tap "Add selected".
+
+The app matches the exact words you type, not their meaning. If you type "hiking" it will not match a note that says "loves the outdoors".
+
+### What the description reader understands
+
+It is a rule-based reader with a fixed vocabulary, not an AI model, so it handles plain statements well and unusual phrasing poorly.
+
+- Emphasis: "must", "need", "essential" become Must have. "Ideally", "prefer", "would be nice" become Nice to have. A plain wish with no emphasis becomes Nice to have, never a Must have.
+- Avoidance: "I hate flaky people", "no one who is controlling", "I can't stand rude people" become Deal-breakers on the matching quality.
+- Keywords: "I love hiking, travel, and cooking" becomes three separate good signs. "I do not want someone who smokes" becomes a red line.
+- If you want a quality and also refuse its opposite ("I need someone who communicates well. I hate flaky people."), it keeps the Must have and tells you it also saw the refusal.
+- It skips statements about traits you do NOT want ("someone who is not ambitious") rather than guessing, and lists them under "Parts I did not use" so nothing is dropped silently.
+- If a suggestion would replace a level you already chose, it starts unticked so a quick tap cannot undo a deliberate choice.
+- Anything it cannot read is shown to you. It never invents criteria from noise.

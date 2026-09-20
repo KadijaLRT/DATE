@@ -104,7 +104,7 @@ function has(text, phrase) {
 // Negation guard: "not late", "never rude", "isn't controlling" should not count as bad.
 function hasUnnegated(text, phrase) {
   const p = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const re = new RegExp(`(?:^|[^a-z])((?:not|never|no|isn't|wasn't|didn't|don't|without)\\s+(?:\\w+\\s+){0,1})?${p}(?:[^a-z]|$)`, 'gi')
+  const re = new RegExp(`(?:^|[^a-z])((?:not|never|no|isn't|wasn't|aren't|weren't|didn't|doesn't|don't|won't|hasn't|haven't|hadn't|cannot|can't|without)\\s+(?:\\w+\\s+){0,2})?${p}(?:[^a-z]|$)`, 'gi')
   let m
   while ((m = re.exec(text)) !== null) {
     if (!m[1]) return true

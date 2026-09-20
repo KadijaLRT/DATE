@@ -30,7 +30,7 @@ function has(text, phrase) {
 }
 function hasUnnegated(text, phrase) {
   const re = new RegExp(
-    `(?:^|[^a-z])((?:not|never|no|isn't|wasn't|didn't|don't|without)\\s+(?:\\w+\\s+){0,1})?${esc(phrase)}(?:[^a-z]|$)`,
+    `(?:^|[^a-z])((?:not|never|no|isn't|wasn't|aren't|weren't|didn't|doesn't|don't|won't|hasn't|haven't|hadn't|cannot|can't|without)\\s+(?:\\w+\\s+){0,2})?${esc(phrase)}(?:[^a-z]|$)`,
     'gi'
   )
   let m

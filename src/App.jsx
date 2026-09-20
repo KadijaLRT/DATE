@@ -9,6 +9,7 @@ import {
 import { useSpeech, summarizeToBullets } from './useSpeech.js'
 import { TRAITS, PRIORITY, VERDICT, evaluate, hasCriteria } from './fit.js'
 import { buildModel, adjustedWeight, MIN_FEEDBACK } from './learn.js'
+import { parseDescription, hasSuggestions } from './describe.js'
 
 const statusOf = (id) => STATUSES.find((s) => s.id === id) || STATUSES[0]
 const tagOf = (id) => TAGS.find((t) => t.id === id)
@@ -875,6 +876,169 @@ function LearnedPanel({ data, model, store, learning }) {
   )
 }
 
+
+/* ---------- description reader ---------- */
+
+const LEVELS = [
+  { id: 'must', label: 'Must have' },
+  { id: 'nice', label: 'Nice to have' },
+  { id: 'dealbreaker', label: 'Deal-breaker' }
+]
+
+function DescriptionReader({ criteria, store }) {
+  const [sugg, setSugg] = useState(null) // editable working copy, or null when not reading
+  const [applied, setApplied] = useState('')
+
+  const read = () => {
+    const r = parseDescription(criteria.note, criteria)
+    setApplied('')
+    setSugg({
+      traits: r.traits.map((t) => ({ ...t, on: !t.overwrites })),
+      wantWords: r.wantWords.map((w) => ({ ...w, on: true })),
+      avoidWords: r.avoidWords.map((w) => ({ ...w, on: true })),
+      conflicts: r.conflicts,
+      unread: r.unread
+    })
+  }
+
+  const patch = (key, i, change) =>
+    setSugg((cur) => ({ ...cur, [key]: cur[key].map((x, j) => (j === i ? { ...x, ...change } : x)) }))
+
+  const apply = () => {
+    const wants = { ...criteria.wants }
+    let nTraits = 0
+    sugg.traits.filter((t) => t.on).forEach((t) => {
+      wants[t.id] = t.priority
+      nTraits += 1
+    })
+    const join = (existing, add) => {
+      const have = (existing || '').split(/[\n,;]+/).map((w) => w.trim()).filter(Boolean)
+      const lower = new Set(have.map((w) => w.toLowerCase()))
+      const fresh = add.map((w) => w.text.trim()).filter((w) => w && !lower.has(w.toLowerCase()))
+      return { text: [...have, ...fresh].join(', '), count: fresh.length }
+    }
+    const want = join(criteria.wantWords, sugg.wantWords.filter((w) => w.on))
+    const avoid = join(criteria.avoidWords, sugg.avoidWords.filter((w) => w.on))
+    store.setCriteria({ wants, wantWords: want.text, avoidWords: avoid.text })
+    setApplied(`Added ${nTraits} quality setting${nTraits === 1 ? '' : 's'}, ${want.count} good sign${want.count === 1 ? '' : 's'}, and ${avoid.count} red line${avoid.count === 1 ? '' : 's'}.`)
+    setSugg(null)
+  }
+
+  const empty = !criteria.note || !criteria.note.trim()
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <button type="button" className="btn ghost" disabled={empty} onClick={read}>
+        Read my note and suggest criteria
+      </button>
+      {empty && <span className="hint" style={{ marginLeft: 10 }}>Write your note first.</span>}
+      {applied && <div className="adj" role="status" style={{ marginTop: 10 }}>{applied}</div>}
+
+      {sugg && (
+        <div className="stat" style={{ marginTop: 12 }}>
+          <h4>Here is what I understood</h4>
+          <p className="hint" style={{ marginTop: 0 }}>
+            Nothing is added until you tap Add selected. Untick anything wrong, and change the level or wording.
+          </p>
+
+          {!hasSuggestions(sugg) && (
+            <p style={{ margin: '0 0 8px' }}>
+              I could not find anything I can turn into criteria. I understand plain statements like "I need someone
+              who communicates well", "ideally ambitious", "I hate flaky people", or "I love hiking and travel".
+            </p>
+          )}
+
+          {sugg.traits.length > 0 && (
+            <>
+              <div className="lbl">Qualities</div>
+              {sugg.traits.map((t, i) => (
+                <div key={t.id} className="sug">
+                  <label className="switch">
+                    <input type="checkbox" checked={t.on} onChange={(e) => patch('traits', i, { on: e.target.checked })} />
+                    <span><strong>{t.label}</strong></span>
+                  </label>
+                  <div className="tagpick" style={{ margin: '6px 0 2px' }}>
+                    {LEVELS.map((l) => (
+                      <button key={l.id} type="button" className={l.id === 'dealbreaker' ? 'red' : 'green'}
+                        aria-pressed={t.priority === l.id} onClick={() => patch('traits', i, { priority: l.id })}>
+                        {l.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="hint">From: "{t.evidence}"{t.alsoAvoids ? ' (you also said you refuse the opposite)' : ''}</div>
+                  {t.overwrites && (
+                    <div className="hint" style={{ color: '#8d2846' }}>
+                      Not ticked because it would replace your current setting. Tick it only if your note is what you mean.
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+
+          {sugg.wantWords.length > 0 && (
+            <>
+              <div className="lbl" style={{ marginTop: 12 }}>Good signs to look for</div>
+              {sugg.wantWords.map((w, i) => (
+                <div key={w.text + i} className="sug">
+                  <label className="switch">
+                    <input type="checkbox" checked={w.on} onChange={(e) => patch('wantWords', i, { on: e.target.checked })} />
+                    <input className="in" style={{ padding: '8px 10px' }} value={w.text}
+                      onChange={(e) => patch('wantWords', i, { text: e.target.value })} aria-label="Good sign keyword" />
+                  </label>
+                </div>
+              ))}
+            </>
+          )}
+
+          {sugg.avoidWords.length > 0 && (
+            <>
+              <div className="lbl" style={{ marginTop: 12 }}>Red lines</div>
+              {sugg.avoidWords.map((w, i) => (
+                <div key={w.text + i} className="sug">
+                  <label className="switch">
+                    <input type="checkbox" checked={w.on} onChange={(e) => patch('avoidWords', i, { on: e.target.checked })} />
+                    <input className="in" style={{ padding: '8px 10px' }} value={w.text}
+                      onChange={(e) => patch('avoidWords', i, { text: e.target.value })} aria-label="Red line keyword" />
+                  </label>
+                </div>
+              ))}
+            </>
+          )}
+
+          {sugg.conflicts.length > 0 && (
+            <>
+              <div className="lbl" style={{ marginTop: 12 }}>Where your note and checklist disagree</div>
+              <ul className="why">
+                {sugg.conflicts.map((c, i) => <li key={i} className="warn">{c.text}</li>)}
+              </ul>
+              <p className="hint" style={{ marginTop: 0 }}>
+                Ticking the quality above will overwrite the checklist level with the one from your note.
+              </p>
+            </>
+          )}
+
+          {sugg.unread.length > 0 && (
+            <>
+              <div className="lbl" style={{ marginTop: 12 }}>Parts I did not use</div>
+              <ul className="why">
+                {sugg.unread.map((u, i) => <li key={i} className="unknown">{u}</li>)}
+              </ul>
+            </>
+          )}
+
+          <div className="btnrow">
+            <button className="btn ghost" onClick={() => setSugg(null)}>Cancel</button>
+            {hasSuggestions(sugg) && (
+              <button className="btn primary" onClick={apply}>Add selected</button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ---------- fit tab ---------- */
 
 const RED_DEAL_TAGS = TAGS.filter((t) => t.kind === 'red')
@@ -969,43 +1133,70 @@ function Fit({ data, store, onOpen }) {
               ))}
             </div>
 
-            <div className="section" style={{ marginTop: 18 }}>In your own words</div>
+            <div className="section" style={{ marginTop: 18 }}>Add your own keywords</div>
+            <p className="hint" style={{ margin: '0 0 12px' }}>
+              The app scans the notes and date impressions you save for each person. Use these two boxes to make it
+              look for specific words. It matches the exact words you type, not their meaning, so write them the same
+              way you would write them in a note.
+            </p>
+
             <label className="field">
-              <span>Words I want to see (comma separated)</span>
+              <span>Good signs to look for</span>
               <input
                 className="in"
                 placeholder="hiking, travel, faith, close family"
                 value={criteria.wantWords}
                 onChange={(e) => store.setCriteria({ wantWords: e.target.value })}
               />
+              <span className="hint" style={{ display: 'block', fontWeight: 400, marginTop: 6 }}>
+                Raises someone's fit score when these appear in their notes. Separate with commas.
+                Example: if you type "hiking" and a note says "loves hiking", it counts as a match.
+              </span>
             </label>
+
             <label className="field">
-              <span>Words I want to avoid (comma separated)</span>
+              <span>Red lines (words that mean "no")</span>
               <input
                 className="in"
                 placeholder="smokes, still texts ex, never wants kids"
                 value={criteria.avoidWords}
                 onChange={(e) => store.setCriteria({ avoidWords: e.target.value })}
               />
+              <span className="hint" style={{ display: 'block', fontWeight: 400, marginTop: 6 }}>
+                Strict: if any of these appear in someone's notes, the app marks them "Consider letting go" no matter how
+                high their score is. Something like "doesn't smoke" will not trigger "smokes".
+              </span>
             </label>
+
+            <div className="section" style={{ marginTop: 18 }}>Describe your ideal partner</div>
             <label className="field">
-              <span>My description (for you, not used for scoring)</span>
+              <span>What does a great partner look like for you?</span>
               <textarea
                 className="in"
-                placeholder="What does a great partner look like for you?"
+                placeholder="Example: I need someone who communicates well. Ideally ambitious. I hate flaky people. I love hiking and travel."
                 value={criteria.note}
                 onChange={(e) => store.setCriteria({ note: e.target.value })}
               />
+              <span className="hint" style={{ display: 'block', fontWeight: 400, marginTop: 6 }}>
+                Write it in plain sentences. Tap the button below and I will suggest quality settings and keywords
+                from it. Nothing changes your scores until you review the suggestions and add them.
+              </span>
             </label>
+            <DescriptionReader criteria={criteria} store={store} />
             {wantVoice.supported && (
-              <button
-                type="button"
-                className={'btn rose ' + (wantVoice.listening ? 'pulse' : '')}
-                onClick={wantVoice.listening ? wantVoice.stop : wantVoice.start}
-              >
-                {wantVoice.listening ? <Square size={18} /> : <Mic size={18} />}
-                {wantVoice.listening ? 'Stop' : 'Speak it'}
-              </button>
+              <>
+                <p className="hint" style={{ margin: '0 0 8px' }}>
+                  The microphone types into the description above.
+                </p>
+                <button
+                  type="button"
+                  className={'btn rose ' + (wantVoice.listening ? 'pulse' : '')}
+                  onClick={wantVoice.listening ? wantVoice.stop : wantVoice.start}
+                >
+                  {wantVoice.listening ? <Square size={18} /> : <Mic size={18} />}
+                  {wantVoice.listening ? 'Stop' : 'Speak my description'}
+                </button>
+              </>
             )}
             {wantVoice.listening && <div className="live">{wantVoice.interim || 'Listening…'}</div>}
             {wantVoice.error && <div className="warn">{wantVoice.error}</div>}
