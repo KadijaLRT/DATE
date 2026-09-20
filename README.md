@@ -23,7 +23,7 @@ PWAs need HTTPS (localhost is exempt) for install and offline use.
 - Profiles with green and red flag tags (tap to toggle on or off), and bullet-point notes
 - Date log timeline with 1 to 5 star ratings and follow-up status
 - Voice notes using the browser Web Speech API, turned into bullets on-device
-- Fit tab: say what you want (must-haves, nice-to-haves, deal-breakers, your own words) and get a Keep pursuing, Keep watching, or Consider letting go call for each person, with reasons
+- Fit tab: say what you want and what you do not want (two separate sides, each with two strengths) and get a Keep pursuing, Keep watching, or Consider letting go call for each person, with reasons
 - Learning: the Fit tab keeps learning from your date ratings, check-ins, and "does this feel right" answers, tells you when what you say you want differs from what your dates show, and shows exactly how it adjusted each score
 - Insights: average rating, where you meet people, most common tags
 - Archive and restore, JSON export and import for backups
@@ -40,11 +40,12 @@ Uses the free Web Speech API. Works in Chrome, Edge, and Safari. Chrome sends au
 
 Everything runs on your device with plain scoring rules. There is no AI model and no network call.
 
-1. Deal-breakers come first. If a red-flag tag you marked as a deal-breaker is on someone, or your notes mention a word you said to avoid, the call is Consider letting go no matter how high the score is.
-2. Otherwise it scores 0 to 100 from your must-haves (weighted 3), nice-to-haves (weighted 1), your average date rating, and green versus red tags. 70 and up is Keep pursuing, 45 to 69 is Keep watching, under 45 is Consider letting go.
+1. Red lines come first. If a red-flag tag you marked as a red line is on someone, or a red-line quality or word shows up in their notes, tags, or date impressions, the call is Consider letting go no matter how high the score is.
+2. Otherwise it scores 0 to 100 from your must-haves (weighted 3), nice-to-haves (weighted 1), your average date rating, and green versus red tags. Each "Would rather not" hit then subtracts 12 points (never more than 30 in total). 70 and up is Keep pursuing, 45 to 69 is Keep watching, under 45 is Consider letting go.
 3. Missing information is not held against someone. Anything you have not recorded counts as unknown, not as a failure.
-4. Each call shows a confidence level. With little data (roughly one date or fewer signals) the app will not say Consider letting go unless a deal-breaker fired, and will not say Keep pursuing on thin evidence.
-5. Notes are matched as whole phrases and simple negation is handled, so "not rude" is not treated as rude and "chocolate" is not treated as "late".
+4. Each call shows a confidence level. With little data (roughly one date or fewer signals) the app will not say Consider letting go unless a red line fired, and will not say Keep pursuing on thin evidence.
+5. "Would rather not" lowers the score but can never force Consider letting go by itself: if the person's score was in the Keep watching range before the deduction, the call stays Keep watching. Only a red line forces it.
+6. Notes are matched as whole phrases and simple negation is handled, so "not rude" is not treated as rude and "chocolate" is not treated as "late".
 
 Limits: it reads keywords, not meaning, so sarcasm or unusual phrasing can be missed. The more specific your tags and notes, the better it works. It reflects your own records against your own standards. It cannot know the person, so treat it as a second opinion and make the final call yourself.
 
@@ -61,7 +62,7 @@ All learning runs on your device with transparent arithmetic. There is no AI mod
 - For qualities you listed as Must have or Nice to have, the weight moves up if they lift your ratings more than that priority implies (a must have should lift ratings about 1.5 stars, a nice to have about 0.75), and down if they lift them less. Every change is shown on the person's card with the numbers behind it.
 - If you often disagree with "keep pursuing" calls the bar for that call rises, and if you often disagree with "let go" calls it drops. It needs 4 answers first and moves at most 8 points.
 - It never adds a quality you did not list. Qualities that seem to matter to you but are not in your criteria are surfaced as a gap so you decide.
-- It never overrides a deal-breaker.
+- It never overrides a red line.
 
 **Safeguards against fooling itself**
 - Needs at least 2 dates with a quality and 2 without before it trusts a pattern.
@@ -77,27 +78,40 @@ All learning runs on your device with transparent arithmetic. There is no AI mod
 
 Turn off "Let learning adjust my scores" on the Fit tab any time to score from only what you typed. "Reset what I learned" erases feedback and check-ins but keeps your people and dates.
 
-## The description box and keyword boxes on the Fit tab
+## Wants and don't-wants on the Fit tab
 
-There are three fields under "Add your own keywords" and "Describe your ideal partner".
+What you want and what you do not want are stored separately, so one quality can be both: "I need someone who communicates well" (a want) and "I hate flaky people" (a don't-want about its opposite). Older versions kept only one level per quality and silently dropped the second; that is fixed.
 
-- **Good signs to look for** (affects score): words you want to see. If they appear in someone's notes or date impressions, their fit score goes up.
-- **Red lines** (affects verdict): words that mean no. If any appear, the person is marked "Consider letting go" regardless of score. Negations such as "doesn't", "never", or "does not really" before the word are recognised, so "doesn't smoke" will not trigger "smokes".
-- **Describe your ideal partner** (suggests, never applies by itself): write plain sentences, then tap "Read my note and suggest criteria". The app proposes quality settings and keywords, and nothing changes until you tick what you want and tap "Add selected".
+**What I want**: each quality is Must have (weight 3) or Nice to have (weight 1). "Good signs to look for" are your own words that raise the score when they appear.
 
-The app matches the exact words you type, not their meaning. If you type "hiking" it will not match a note that says "loves the outdoors".
+**What I do not want** has two strengths:
 
-### What the description reader understands
+- **Red line**: forces "Consider letting go" whatever the score.
+- **Would rather not**: lowers the score by 12 points (capped at 30 in total), flags it, and never forces "Consider letting go" on its own.
+
+Each quality has a plain-language "avoid" version (for example "Flaky or hard to reach"). You can also set red-flag tags as red lines, and type your own red line words and would-rather-not words.
+
+Keywords match the exact word in a person's notes, tags, or date impressions, not its meaning, and "doesn't smoke" will not trigger "smokes". Type "smoke", "smokes", and "smoking" if you write all three.
+
+### Flags on each person
+
+Every person's card lists which of your wants and don't-wants showed up and where, for example `Red line: smokes  a note: "He smokes daily"`. If would-rather-not hits lowered the score, the card shows the before and after (70 to 58).
+
+### The description box
+
+Write plain sentences, then tap "Read my note and sort it into wants and don't-wants". Nothing changes until you tick what you want and tap "Add selected". The review has two groups, "What you want" and "What you do not want", each item showing the sentence it came from. Keyword rows show who they would match right now, so you can see the effect of a red line before adding it.
 
 It is a rule-based reader with a fixed vocabulary, not an AI model, so it handles plain statements well and unusual phrasing poorly.
 
-- Emphasis: "must", "need", "essential" become Must have. "Ideally", "prefer", "would be nice" become Nice to have. A plain wish with no emphasis becomes Nice to have, never a Must have.
-- Avoidance: "I hate flaky people", "no one who is controlling", "I can't stand rude people" become Deal-breakers on the matching quality.
-- Keywords: "I love hiking, travel, and cooking" becomes three separate good signs. "I do not want someone who smokes" becomes a red line.
-- If you want a quality and also refuse its opposite ("I need someone who communicates well. I hate flaky people."), it keeps the Must have and tells you it also saw the refusal.
-- It skips statements about traits you do NOT want ("someone who is not ambitious") rather than guessing, and lists them under "Parts I did not use" so nothing is dropped silently.
-- If a suggestion would replace a level you already chose, it starts unticked so a quick tap cannot undo a deliberate choice.
-- Anything it cannot read is shown to you. It never invents criteria from noise.
+- Wants: "must", "need", "essential" become Must have. "Ideally", "prefer", "would be nice" become Nice to have. A plain wish becomes Nice to have, never a Must have.
+- Don't-wants follow the same rule in reverse: strong wording ("I hate", "I can't stand", "deal-breaker", "absolutely no") starts as Red line; plain wording ("I don't want", "no smokers", "not clingy") starts as Would rather not. You can change any level before adding.
+- "Smoking is a dealbreaker" refuses smoking (the refused thing can come before the cue word).
+- Mixed sentences are split: "someone kind but not clingy" gives a want (kind) and a don't-want (clingy).
+- Saying you do not want a good quality ("someone who is not ambitious") becomes a keyword don't-want.
+- If a suggestion would replace a level you already chose, it starts unticked, and the disagreement is listed.
+- Anything it cannot read is shown under "Parts I did not use". It never invents criteria from noise.
+
+Old saves are upgraded automatically: the earlier "Deal-breaker" level becomes a Red line on the matching don't-want.
 
 ## Contact history
 

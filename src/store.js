@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { emptyCriteria } from './fit.js'
+import { emptyCriteria, normalizeCriteria, TAGS } from './fit.js'
+
+// Tags live in fit.js so scoring and the UI share one list.
+export { TAGS }
 
 const KEY = 'roster.v1'
 
@@ -32,36 +35,13 @@ export const isEnded = (p) => p?.status === 'ended'
 // Someone shows in the main list and the Fit tab only if they are neither archived nor ended.
 export const isActive = (p) => Boolean(p) && !p.archived && p.status !== 'ended'
 
-export const TAGS = [
-  { id: 'communicator', label: 'Great communicator', kind: 'green' },
-  { id: 'consistent', label: 'Consistent', kind: 'green' },
-  { id: 'dogs', label: 'Dog lover', kind: 'green' },
-  { id: 'funny', label: 'Funny', kind: 'green' },
-  { id: 'ambitious', label: 'Ambitious', kind: 'green' },
-  { id: 'inconsistent', label: 'Inconsistent', kind: 'red' },
-  { id: 'slowreply', label: 'Slow replies', kind: 'red' },
-  { id: 'vague', label: 'Vague plans', kind: 'red' },
-  { id: 'selfabsorbed', label: 'Self-focused', kind: 'red' },
-  { id: 'pushy', label: 'Pushy', kind: 'red' }
-]
-
 const empty = { people: [], dates: [], criteria: emptyCriteria, feedback: [], checkins: [], learning: true }
 
 function cleanList(x) {
   return Array.isArray(x) ? x.filter((i) => i && typeof i === 'object') : []
 }
 
-export function cleanCriteria(c) {
-  const base = emptyCriteria
-  if (!c || typeof c !== 'object') return base
-  return {
-    wants: c.wants && typeof c.wants === 'object' ? c.wants : {},
-    dealTags: Array.isArray(c.dealTags) ? c.dealTags : [],
-    wantWords: typeof c.wantWords === 'string' ? c.wantWords : '',
-    avoidWords: typeof c.avoidWords === 'string' ? c.avoidWords : '',
-    note: typeof c.note === 'string' ? c.note : ''
-  }
-}
+export const cleanCriteria = normalizeCriteria
 
 function load() {
   try {
