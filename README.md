@@ -1,4 +1,4 @@
-# Roster
+# Date-a-Dex
 
 A private, on-device dating tracker. React + Vite PWA. No accounts, no server, no analytics.
 
@@ -20,7 +20,10 @@ PWAs need HTTPS (localhost is exempt) for install and offline use.
 ## Features
 
 - One People tab: search names, jobs, and notes; filter by status; sort by longest since contact; notes and flag preview on each card; an Archived section at the bottom
-- Profiles with green and red flag tags (tap to toggle on or off), and bullet-point notes
+- Today screen with reminders and Quick log, plans, "remember for next time", and post-date reflections
+- Personal patterns, an emotional timeline, undo, an optional PIN lock, and encrypted backups
+- A relationship timeline: dates, contact, your own moments and how it ended, in order, on every profile and on one Timeline tab for everyone
+- Profiles with green and red flags (chosen from a collapsible list, or typed in your own), and bullet-point notes
 - Date log timeline with 1 to 5 star ratings and follow-up status
 - Voice notes using the browser Web Speech API, turned into bullets on-device
 - Fit tab: say what you want and what you do not want (two separate sides, each with two strengths) and get a Keep pursuing, Keep watching, or Consider letting go call for each person, with reasons
@@ -113,6 +116,82 @@ It is a rule-based reader with a fixed vocabulary, not an AI model, so it handle
 
 Old saves are upgraded automatically: the earlier "Deal-breaker" level becomes a Red line on the matching don't-want.
 
+## Everything on a profile feeds Fit
+
+| Profile data | How Fit uses it |
+| --- | --- |
+| Notes, how you met, job, location, contact log notes | Searched for your wants, don't-wants, and keywords. Contact notes the app writes itself ("Matched") are ignored. |
+| Green and red flags, including your own | Green raises the score, red lowers it |
+| Dates: rating, activity, impressions | Rating feeds the score; text is searched like notes |
+| Follow-up on your most recent date | Up to 6 points: next date planned +6, you still want to text +1, waiting on them 0, not continuing -6 |
+| Contact history | Up to 4 points, from how recently and how often you logged contact (very active +4, gone quiet -4). It counts contact in either direction |
+| Moments you add | Text is searched like notes; feelings move the score up to 4 points either way |
+| Reflections, plans, and remembered details | Their text is searched; quick reflection answers move the score up to 4 points either way |
+| Age and location | Checked against the age range and places you set, as a don't-want at the strength you choose |
+
+The follow-up, contact, feeling, and reflection adjustments add up to at most 10 points either way, and each one is shown on the card with its number. Missing data is never held against someone: no age, no location, no logged contact, or no follow-up simply means no check. Not used: the name and when you added the profile. Ended people are left out of the Fit tab, though their dates still teach it. The Fit tab has a "What Fit reads from each profile" panel with this list.
+
+Set the age range and places under "What I do not want". Each can be a Red line (forces Consider letting go) or Would rather not (lowers the score by 12, and flags it). Places are comma separated and matched as whole words against the location on the profile.
+
+## Today
+
+The app opens on Today. It shows, in order: reminders for plans coming up (with the things you saved to remember for that person), Quick log, your other plans, dates you have not reflected on yet, your most recent interactions, and who you were last in touch with. Use `?tab=people` (or `today`, `timeline`, `dates`, `fit`, `insights`) on the address to open a specific tab.
+
+**Quick log** picks a person, then one tap logs "We talked today", one line plus a feeling saves a note to their timeline, and "Log a date" opens the date form for them.
+
+**Plans and reminders.** On a profile, "Plan a date" saves a day, what, and where, with a reminder on or off. A plan shows on Today as a reminder from a few days before (set the number in Settings, 0 to 7; default 2) and stays on the timeline with a countdown. Plans whose day has passed are listed as "It happened: log the date". Reminders appear when you open the app: Date-a-Dex sends no notifications, because nothing ever leaves your device.
+
+**Remember for next time.** Save a like (a coffee order), a place to try, an interest, a topic to bring up, or a date idea. Topics and ideas can be ticked off. What you saved shows under the person's upcoming plan and on their reminder on Today.
+
+## Reflections after a date
+
+In the date form, "Reflect on this date (optional)" asks: comfortable being myself, heard and understood, enjoyed our time, respected, and whether you want to see them again (Yes / Somewhat / No, tap again to clear), plus "anything I want to understand better" and a journal box. Every question can be skipped. Reflections show as chips on the timeline, and Today lists dates from the last three weeks you have not reflected on. In Fit, your three most recent reflections with quick answers can move the score up to 4 points, inside the same shared 10 point cap as follow-ups, contact and feelings. Text-only reflections do not change the score, but their words are searched by your keywords.
+
+## Fit, explained in four parts
+
+Each card is split into **Compatibility** (how what you recorded lines up with what you want), **Personal experience** (ratings, follow-up, contact, feelings, reflections), **Unknowns** (things you care about that nothing has been recorded for yet, including a missing age or location when you set preferences), and **Evidence** (the confidence level and how many dates, reflections, notes, contacts, moments, flags and plans it rests on). The scoring rules did not change; only how they are presented.
+
+## Patterns in your own entries (Insights)
+
+- **How things have felt**: a line through your moment feelings (rose dots) and reflection results (dark dots) over time, for everyone or one person. It has a text description for screen readers.
+- **Patterns**: the dates you rated highest by activity, words that keep coming up in your notes and reflections, and your Yes and No counts per reflection question. Each needs at least a few entries, and it describes your records only; it is not advice about any person.
+
+## Undo
+
+Deleting a person, date, contact, moment, plan, or reminder, or erasing everything, shows "Undo" for 8 seconds. The undo copy lives only in memory and is dropped when the message goes.
+
+## Settings (the gear, top right)
+
+- **Privacy dashboard**: what is stored, roughly how big it is, whether the lock is on, and when you last made a backup. Everything is stored only in this browser.
+- **App lock**: a 4 to 8 digit PIN, stored only as a salted PBKDF2 hash. It locks when you open the app and after you have been away for the time you choose (every time, 1 minute, 5 minutes, or 1 hour), or with Lock now. Five wrong PINs in a row make you wait 30 seconds. It keeps casual snoopers out. **It does not encrypt what is saved in the browser**, and if you forget the PIN the only way back in is clearing this site's data, which erases everything, so keep a backup.
+- **Backups**: a plain JSON backup, restore, and an **encrypted backup** protected by a passphrase you choose (AES-256-GCM, key derived with PBKDF2, at least 8 characters). There is no recovery: lose the passphrase and that file cannot be opened by anyone. Restore detects encrypted files and asks for the passphrase; a wrong one changes nothing. Your settings are included in a backup, but your PIN is never exported.
+- **People cards**: choose whether each card shows details, notes, flags, and last contact. Profiles always show everything.
+- **Reminders**: how many days before a plan to remind you.
+- **Erase everything** (with undo).
+
+## The timeline
+
+Everything you record about someone lines up in one chronological story, newest first, grouped by month. Each entry has a date badge on the left and a card on the right, colored by type:
+
+- **Date**: the activity, star rating, follow-up, and your impressions, with an "Open date log" button to edit it.
+- **In touch**: contact you logged (with its note).
+- **Matched** and **Let go**: when you matched, and how it ended (reason and note).
+- **Moments**: things you add yourself: a Conversation, a Plan, a Milestone, or How I felt. Each has a day, some text (you can dictate it), and an optional feeling: Great, Good, Okay, Uneasy, or Rough.
+
+Nothing is copied. The timeline is built from what the app already stores, so editing a date or deleting a contact changes it immediately.
+
+**On each profile** the timeline replaces the old contact list. "We talked today" logs a contact for today in one tap (it is a normal entry, so the x on it undoes it), "Another day" logs contact on a past date, and "Add a moment" opens the form. Contacts, the match entry, and moments have an x to delete (deleting a moment asks first).
+
+**The Timeline tab** shows everyone. Pick a person, filter by Dates, In touch, or Moments, and optionally include archived people. Tap a name to open their profile.
+
+Your moments feed Fit like everything else on a profile. Their text is searched by your keywords, wants, and don't-wants. Feelings count too: your five most recent moments that carry a feeling can move the score up to 4 points either way (Great +4, Rough -4, mixed ones in between). That shares the same 10 point cap as follow-ups and contact history.
+
+## Green and red flags
+
+On a profile, the flags you have are shown as chips (tap the × to remove one). The fixed list of built-in flags sits behind "Choose from the flag list", so it no longer takes over the screen. To add your own, type it under "Add your own flag" and tap Add as green flag or Add as red flag (up to 20 per person, 40 characters each; the same words can exist in both colours).
+
+Your own flags count in the Fit score exactly like the built-in ones: red lowers it, green raises it, and the effect is capped so flags alone cannot swing a call. Your keywords on the Fit tab can also match them (for example a would-rather-not word "texts ex" matches your flag "Still texts ex"). On the People list, each card shows up to two green and two red chips plus a "+3 more (4 green, 3 red)" summary. Insights counts your own flags in Most common tags.
+
 ## Contact history
 
 Each person has a contact history instead of a single "last contact" stamp.
@@ -130,7 +209,8 @@ An installed PWA keeps its old files until it updates. After redeploying `dist/`
 
 1. Close the app completely (swipe it away), then reopen it once while online. The new version downloads in the background.
 2. Close and reopen it a second time to run the new version.
-3. If it still looks old: iPhone, delete the Home Screen icon and re-add it from Safari (your data is stored per site and survives this only if you use the same URL, so export a backup first from Insights). Android, long-press the icon, App info, Storage, Clear cache.
+3. The app is now called Date-a-Dex, but a Home Screen icon keeps the name it was installed with. An existing icon will still say Roster until you delete it and re-add it from Safari (or Chrome). Your data is saved under the same key, so it carries over as long as you use the same URL; export a backup first from Insights to be safe.
+4. If it still looks old: iPhone, delete the Home Screen icon and re-add it from Safari (your data is stored per site and survives this only if you use the same URL, so export a backup first from Insights). Android, long-press the icon, App info, Storage, Clear cache.
 
 ## Stages, and letting someone go
 

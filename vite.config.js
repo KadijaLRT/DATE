@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Roster',
-        short_name: 'Roster',
+        name: 'Date-a-Dex',
+        short_name: 'Date-a-Dex',
         description: 'A private, on-device dating tracker.',
         theme_color: '#2B1B2E',
         background_color: '#FBF3F1',

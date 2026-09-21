@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
-import { emptyCriteria, normalizeCriteria, TAGS } from './fit.js'
+import { useEffect, useRef, useState } from 'react'
+import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, plansOf, rememberOf, reflectionOf, TAGS } from './fit.js'
+import { normalizeSettings } from './settings.js'
 
 // Tags live in fit.js so scoring and the UI share one list.
 export { TAGS }
 
+// The storage key keeps its original name so everyone's saved data survives the rename to Date-a-Dex.
 const KEY = 'roster.v1'
 
 // Order matters: it is the order shown in filters and pickers, roughly from earliest stage to latest.
@@ -35,7 +37,15 @@ export const isEnded = (p) => p?.status === 'ended'
 // Someone shows in the main list and the Fit tab only if they are neither archived nor ended.
 export const isActive = (p) => Boolean(p) && !p.archived && p.status !== 'ended'
 
-const empty = { people: [], dates: [], criteria: emptyCriteria, feedback: [], checkins: [], learning: true }
+const empty = { people: [], dates: [], criteria: emptyCriteria, feedback: [], checkins: [], learning: true, settings: normalizeSettings() }
+
+// A stored date keeps its shape; only the reflection is re-validated so a bad backup cannot smuggle junk in.
+function cleanDate(d) {
+  if (!d || typeof d !== 'object') return d
+  const r = reflectionOf(d)
+  const { reflection: _old, ...rest } = d
+  return r ? { ...rest, reflection: r } : rest
+}
 
 function cleanList(x) {
   return Array.isArray(x) ? x.filter((i) => i && typeof i === 'object') : []
@@ -50,11 +60,12 @@ function load() {
     const parsed = JSON.parse(raw)
     return {
       people: Array.isArray(parsed.people) ? parsed.people.map(migratePerson) : [],
-      dates: Array.isArray(parsed.dates) ? parsed.dates : [],
+      dates: Array.isArray(parsed.dates) ? parsed.dates.filter((x) => x && typeof x === 'object').map(cleanDate) : [],
       criteria: cleanCriteria(parsed.criteria),
       feedback: cleanList(parsed.feedback),
       checkins: cleanList(parsed.checkins),
-      learning: parsed.learning !== false
+      learning: parsed.learning !== false,
+      settings: normalizeSettings(parsed.settings)
     }
   } catch {
     return empty
@@ -111,6 +122,10 @@ export function migratePerson(p) {
     status,
     contacts,
     tags: Array.isArray(rest.tags) ? rest.tags : [],
+    customFlags: customFlagsOf(rest),
+    moments: momentsOf(rest),
+    plans: plansOf(rest),
+    remember: rememberOf(rest),
     notes: Array.isArray(rest.notes) ? rest.notes : [],
     // end = { reason, note, date } only while status is 'ended'; cleared otherwise so stale reasons never linger
     end: status === 'ended' ? end : null
@@ -122,6 +137,10 @@ export const uid = () =>
 
 export function useStore() {
   const [data, setData] = useState(load)
+  const [undo, setUndo] = useState(null)
+  const dataRef = useRef(data)
+  useEffect(() => { dataRef.current = data }, [data])
+  const snapRef = useRef(null)
 
   useEffect(() => {
     try {
@@ -142,6 +161,10 @@ export function useStore() {
       status: 'talking',
       end: null,
       tags: [],
+      customFlags: [],
+      moments: [],
+      plans: [],
+      remember: [],
       notes: [],
       contacts: [{ id: uid(), date: todayDay(), note: 'Matched' }],
       archived: false,
@@ -180,7 +203,7 @@ export function useStore() {
       people: d.people.map((p) => (p.id === id ? { ...p, ...patch } : p))
     }))
 
-  const deletePerson = (id) =>
+  const rawDeletePerson = (id) =>
     setData((d) => ({
       ...d,
       people: d.people.filter((p) => p.id !== id),
@@ -208,7 +231,21 @@ export function useStore() {
       )
     }))
 
-  const deleteContact = (personId, contactId) =>
+  const addMoment = (personId, m) =>
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) =>
+        p.id === personId ? { ...p, moments: momentsOf({ moments: [...momentsOf(p), { id: uid(), ...m }] }) } : p
+      )
+    }))
+
+  const rawDeleteMoment = (personId, momentId) =>
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) => (p.id === personId ? { ...p, moments: momentsOf(p).filter((m) => m.id !== momentId) } : p))
+    }))
+
+  const rawDeleteContact = (personId, contactId) =>
     setData((d) => ({
       ...d,
       people: d.people.map((p) =>
@@ -222,17 +259,59 @@ export function useStore() {
       dates: d.dates.map((x) => (x.id === id ? { ...x, ...patch } : x))
     }))
 
-  const deleteDate = (id) =>
+  const rawDeleteDate = (id) =>
     setData((d) => ({ ...d, dates: d.dates.filter((x) => x.id !== id) }))
+
+  // Deleting anything can be undone for a few seconds. The snapshot lives only in memory and is dropped when the toast goes.
+  const undoable = (label, fn) => {
+    snapRef.current = dataRef.current
+    fn()
+    setUndo({ label, key: uid() })
+  }
+  const undoLast = () => {
+    if (snapRef.current) setData(snapRef.current)
+    snapRef.current = null
+    setUndo(null)
+  }
+  const dismissUndo = () => {
+    snapRef.current = null
+    setUndo(null)
+  }
+  const deletePerson = (id) => undoable('Person deleted', () => rawDeletePerson(id))
+  const deleteDate = (id) => undoable('Date deleted', () => rawDeleteDate(id))
+  const deleteContact = (personId, contactId) => undoable('Contact deleted', () => rawDeleteContact(personId, contactId))
+  const deleteMoment = (personId, momentId) => undoable('Moment deleted', () => rawDeleteMoment(personId, momentId))
+  const eraseEverything = () => undoable('Everything erased', () => setData({ ...empty, settings: dataRef.current.settings }))
+
+  const patchPerson = (id, fn) =>
+    setData((d) => ({ ...d, people: d.people.map((p) => (p.id === id ? { ...p, ...fn(p) } : p)) }))
+
+  const updateMoment = (personId, momentId, patch) =>
+    patchPerson(personId, (p) => ({ moments: momentsOf({ moments: momentsOf(p).map((m) => (m.id === momentId ? { ...m, ...patch } : m)) }) }))
+
+  const addPlan = (personId, plan) =>
+    patchPerson(personId, (p) => ({ plans: plansOf({ plans: [...plansOf(p), { id: uid(), ...plan }] }) }))
+  const deletePlan = (personId, planId) =>
+    undoable('Plan removed', () => patchPerson(personId, (p) => ({ plans: plansOf(p).filter((x) => x.id !== planId) })))
+
+  const addRemember = (personId, item) =>
+    patchPerson(personId, (p) => ({ remember: rememberOf({ remember: [...rememberOf(p), { id: uid(), ...item }] }) }))
+  const toggleRemember = (personId, itemId) =>
+    patchPerson(personId, (p) => ({ remember: rememberOf(p).map((r) => (r.id === itemId ? { ...r, done: !r.done } : r)) }))
+  const deleteRemember = (personId, itemId) =>
+    undoable('Removed', () => patchPerson(personId, (p) => ({ remember: rememberOf(p).filter((r) => r.id !== itemId) })))
+
+  const setSettings = (patch) => setData((d) => ({ ...d, settings: normalizeSettings({ ...d.settings, ...patch, card: { ...d.settings.card, ...(patch.card || {}) } }) }))
 
   const replaceAll = (next) =>
     setData({
       people: Array.isArray(next.people) ? next.people.map(migratePerson) : [],
-      dates: Array.isArray(next.dates) ? next.dates : [],
+      dates: Array.isArray(next.dates) ? next.dates.filter((x) => x && typeof x === 'object').map(cleanDate) : [],
       criteria: cleanCriteria(next.criteria),
       feedback: cleanList(next.feedback),
       checkins: cleanList(next.checkins),
-      learning: next.learning !== false
+      learning: next.learning !== false,
+      settings: normalizeSettings(next.settings)
     })
 
   // One verdict-feedback entry per person: the latest answer replaces the earlier one.
@@ -268,6 +347,19 @@ export function useStore() {
     addDate,
     addContact,
     deleteContact,
+    addMoment,
+    deleteMoment,
+    updateMoment,
+    addPlan,
+    deletePlan,
+    addRemember,
+    toggleRemember,
+    deleteRemember,
+    setSettings,
+    eraseEverything,
+    undo,
+    undoLast,
+    dismissUndo,
     updateDate,
     deleteDate,
     replaceAll,

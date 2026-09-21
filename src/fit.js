@@ -91,6 +91,160 @@ export const TAGS = [
 ]
 const TAG_LABEL = Object.fromEntries(TAGS.map((t) => [t.id, t.label]))
 
+/**
+ * Moments: things you record on a profile that are not a date or a contact, each with a day, a kind, some text,
+ * and optionally how it made you feel. They show on the timeline and feed Fit like everything else on a profile.
+ */
+export const MOMENT_TYPES = [
+  { id: 'conversation', label: 'Conversation' },
+  { id: 'plan', label: 'Plan' },
+  { id: 'milestone', label: 'Milestone' },
+  { id: 'feeling', label: 'How I felt' }
+]
+export const FEELINGS = [
+  { id: 'great', label: 'Great', value: 1 },
+  { id: 'good', label: 'Good', value: 0.5 },
+  { id: 'okay', label: 'Okay', value: 0 },
+  { id: 'uneasy', label: 'Uneasy', value: -0.5 },
+  { id: 'rough', label: 'Rough', value: -1 }
+]
+export const MAX_MOMENTS = 200
+export const MAX_MOMENT_TEXT = 600
+const MOMENT_TYPE_IDS = new Set(MOMENT_TYPES.map((t) => t.id))
+const FEELING_VALUE = Object.fromEntries(FEELINGS.map((f) => [f.id, f.value]))
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+const validDay = (d) => typeof d === 'string' && DAY_RE.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z'))
+
+export function momentsOf(person) {
+  const raw = Array.isArray(person?.moments) ? person.moments : []
+  const out = []
+  const seen = new Set()
+  raw.forEach((m, i) => {
+    if (!m || typeof m !== 'object' || !validDay(m.date)) return
+    const text = typeof m.text === 'string' ? m.text.trim().slice(0, MAX_MOMENT_TEXT) : ''
+    const feeling = typeof m.feeling === 'string' && m.feeling in FEELING_VALUE ? m.feeling : null
+    if (!text && !feeling) return
+    let id = typeof m.id === 'string' && m.id ? m.id : `m-${i}`
+    while (seen.has(id)) id += '_'
+    seen.add(id)
+    out.push({ id, date: m.date, type: MOMENT_TYPE_IDS.has(m.type) ? m.type : 'conversation', text, feeling })
+  })
+  return out.slice(0, MAX_MOMENTS)
+}
+
+/**
+ * Plans (upcoming dates) and "remember for next time" items, both stored on the person.
+ */
+export const REMEMBER_KINDS = [
+  { id: 'preference', label: 'Likes' },
+  { id: 'place', label: 'Place to try' },
+  { id: 'interest', label: 'Interest' },
+  { id: 'topic', label: 'Topic to discuss' },
+  { id: 'idea', label: 'Date idea' }
+]
+export const MAX_PLANS = 50
+export const MAX_REMEMBER = 100
+export const MAX_PLAN_TEXT = 80
+export const MAX_REMEMBER_TEXT = 200
+const REMEMBER_IDS = new Set(REMEMBER_KINDS.map((k) => k.id))
+
+export function plansOf(person) {
+  const raw = Array.isArray(person?.plans) ? person.plans : []
+  const out = []
+  const seen = new Set()
+  raw.forEach((p, i) => {
+    if (!p || typeof p !== 'object' || !validDay(p.date)) return
+    const title = typeof p.title === 'string' ? p.title.trim().slice(0, MAX_PLAN_TEXT) : ''
+    const place = typeof p.place === 'string' ? p.place.trim().slice(0, MAX_PLAN_TEXT) : ''
+    let id = typeof p.id === 'string' && p.id ? p.id : `p-${i}`
+    while (seen.has(id)) id += '_'
+    seen.add(id)
+    out.push({ id, date: p.date, title, place, remind: p.remind !== false })
+  })
+  return out.slice(0, MAX_PLANS)
+}
+
+export function rememberOf(person) {
+  const raw = Array.isArray(person?.remember) ? person.remember : []
+  const out = []
+  const seen = new Set()
+  raw.forEach((r, i) => {
+    if (!r || typeof r !== 'object') return
+    const text = typeof r.text === 'string' ? r.text.trim().slice(0, MAX_REMEMBER_TEXT) : ''
+    if (!text) return
+    let id = typeof r.id === 'string' && r.id ? r.id : `r-${i}`
+    while (seen.has(id)) id += '_'
+    seen.add(id)
+    out.push({ id, kind: REMEMBER_IDS.has(r.kind) ? r.kind : 'idea', text, done: r.done === true })
+  })
+  return out.slice(0, MAX_REMEMBER)
+}
+
+/**
+ * Post-date reflection, stored on the date. Quick answers plus optional writing.
+ */
+export const REFLECTION_QUESTIONS = [
+  { id: 'comfortable', label: 'I felt comfortable being myself', short: 'Comfortable' },
+  { id: 'heard', label: 'I felt heard and understood', short: 'Heard' },
+  { id: 'enjoyed', label: 'I enjoyed our time together', short: 'Enjoyed' },
+  { id: 'respected', label: 'I felt respected', short: 'Respected' }
+]
+export const REFLECTION_ANSWERS = [
+  { id: 'yes', label: 'Yes', value: 1 },
+  { id: 'somewhat', label: 'Somewhat', value: 0 },
+  { id: 'no', label: 'No', value: -1 }
+]
+export const AGAIN_ANSWERS = [
+  { id: 'yes', label: 'Yes', value: 1 },
+  { id: 'unsure', label: 'Not sure', value: 0 },
+  { id: 'no', label: 'No', value: -1 }
+]
+export const MAX_REFLECTION_NOTE = 300
+export const MAX_REFLECTION_JOURNAL = 2000
+const ANSWER_VALUE = { yes: 1, somewhat: 0, no: -1, unsure: 0 }
+
+export function reflectionOf(date) {
+  const r = date?.reflection
+  if (!r || typeof r !== 'object') return null
+  const out = {}
+  for (const q of REFLECTION_QUESTIONS) if (r[q.id] === 'yes' || r[q.id] === 'somewhat' || r[q.id] === 'no') out[q.id] = r[q.id]
+  if (r.again === 'yes' || r.again === 'unsure' || r.again === 'no') out.again = r.again
+  const understand = typeof r.understand === 'string' ? r.understand.trim().slice(0, MAX_REFLECTION_NOTE) : ''
+  const journal = typeof r.journal === 'string' ? r.journal.trim().slice(0, MAX_REFLECTION_JOURNAL) : ''
+  if (understand) out.understand = understand
+  if (journal) out.journal = journal
+  return Object.keys(out).length ? out : null
+}
+
+// Average of the answered questions on a -1..1 scale, or null when only text was written.
+export function reflectionScore(r) {
+  if (!r) return null
+  const vals = [...REFLECTION_QUESTIONS.map((q) => r[q.id]), r.again].filter(Boolean).map((a) => ANSWER_VALUE[a])
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+}
+
+/**
+ * Flags the user typed themselves: [{ id, label, kind: 'green' | 'red' }].
+ * Accepts anything (old saves, hand-edited backups) and returns only valid, de-duplicated entries.
+ */
+export const MAX_CUSTOM_FLAGS = 20
+export const MAX_FLAG_LENGTH = 40
+export function customFlagsOf(person) {
+  const raw = Array.isArray(person?.customFlags) ? person.customFlags : []
+  const seen = new Set()
+  const out = []
+  for (const f of raw) {
+    if (!f || typeof f !== 'object') continue
+    const label = typeof f.label === 'string' ? f.label.trim().replace(/\s+/g, ' ').slice(0, MAX_FLAG_LENGTH) : ''
+    if (!label || (f.kind !== 'green' && f.kind !== 'red')) continue
+    const key = f.kind + ':' + label.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ id: typeof f.id === 'string' && f.id ? f.id : key, label, kind: f.kind })
+  }
+  return out.slice(0, MAX_CUSTOM_FLAGS)
+}
+
 // Two independent sides. A quality can be wanted AND its opposite refused at the same time
 // ("I need someone who communicates well. I hate flaky people.").
 export const WANT_LEVELS = {
@@ -116,6 +270,12 @@ export const emptyCriteria = {
   wantWords: '',
   avoidWords: '', // red line words
   softAvoidWords: '', // would-rather-not words
+  // Age range and places you are open to. Outside them counts as a don't-want at the chosen strength.
+  ageMin: null,
+  ageMax: null,
+  ageLevel: 'rathernot',
+  places: '', // comma separated, matched against a person's location
+  placesLevel: 'rathernot',
   note: ''
 }
 
@@ -139,7 +299,20 @@ export function normalizeCriteria(c) {
     if (ids.has(id) && (v === 'redline' || v === 'rathernot')) avoids[id] = v
   }
   const str = (x) => (typeof x === 'string' ? x : '')
+  const age = (x) => {
+    const n = typeof x === 'number' ? x : typeof x === 'string' && x.trim() !== '' ? Number(x) : NaN
+    return Number.isInteger(n) && n >= 18 && n <= 120 ? n : null
+  }
+  let ageMin = age(c.ageMin)
+  let ageMax = age(c.ageMax)
+  if (ageMin !== null && ageMax !== null && ageMin > ageMax) [ageMin, ageMax] = [ageMax, ageMin]
+  const lvl = (x) => (x === 'redline' || x === 'rathernot' ? x : 'rathernot')
   return {
+    ageMin,
+    ageMax,
+    ageLevel: lvl(c.ageLevel),
+    places: str(c.places),
+    placesLevel: lvl(c.placesLevel),
     wants,
     avoids,
     dealTags: Array.isArray(c.dealTags) ? c.dealTags.filter((x) => typeof x === 'string') : [],
@@ -150,7 +323,7 @@ export function normalizeCriteria(c) {
   }
 }
 
-const norm = (s) => (s || '').toLowerCase().replace(/[’']/g, "'")
+const norm = (s) => (typeof s === 'string' ? s : s == null ? '' : String(s)).toLowerCase().replace(/[’']/g, "'")
 
 export function splitWords(str) {
   return (str || '')
@@ -178,9 +351,11 @@ function hasUnnegated(text, phrase) {
 
 function evidenceText(person, dates) {
   const mine = dates.filter((d) => d.personId === person.id)
-  const parts = [...(person.notes || []), person.met, person.job]
+  const parts = [...(person.notes || []), person.met, person.job, ...realContacts(person).map((c) => c.note), ...momentsOf(person).map((m) => m.text), ...plansOf(person).flatMap((x) => [x.title, x.place]), ...rememberOf(person).map((x) => x.text)]
   mine.forEach((d) => {
     parts.push(d.activity)
+    const rf = reflectionOf(d)
+    if (rf) parts.push(rf.understand, rf.journal)
     ;(d.impressions || []).forEach((i) => parts.push(i))
   })
   return norm(parts.filter(Boolean).join(' . '))
@@ -196,13 +371,21 @@ function evidenceSegments(person, dates) {
   ;(person.notes || []).forEach((n) => push('a note', n))
   push('how you met', person.met)
   push('their job', person.job)
+  push('their location', person.location)
+  realContacts(person).filter((c) => !isSystemContact(c)).forEach((c) => push('a contact note', c.note))
+  momentsOf(person).forEach((m) => push('a moment', m.text))
+  plansOf(person).forEach((x) => { push('a plan', x.title); push('a plan', x.place) })
+  rememberOf(person).forEach((x) => push('a remembered detail', x.text))
   dates
     .filter((d) => d.personId === person.id)
     .forEach((d) => {
       push('a date', d.activity)
+      const rf = reflectionOf(d)
+      if (rf) { push('a reflection', rf.understand); push('a reflection', rf.journal) }
       ;(d.impressions || []).forEach((i) => push('a date impression', i))
     })
   ;(person.tags || []).forEach((t) => push('a tag', TAG_LABEL[t] || t))
+  customFlagsOf(person).forEach((f) => push('a flag', f.label))
   return segs
 }
 
@@ -213,8 +396,29 @@ function findSegment(segs, phrase, unnegated) {
   return null
 }
 
+export const splitPlaces = (str) =>
+  (str || '').split(/[\n,;]+/).map((w) => norm(w).trim()).filter((w) => w.length >= 2)
+
+export function parseAge(v) {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number.parseInt(v, 10) : NaN
+  return Number.isInteger(n) && n >= 18 && n <= 120 ? n : null
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+const dayMs = (d) => (DAY.test(d) ? Date.parse(d + 'T00:00:00Z') : NaN)
+const localToday = () => {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+}
+// Entries the app writes itself say nothing about the person.
+const isSystemContact = (c) => /^(matched|imported from)/i.test((c.note || '').trim())
+function realContacts(person) {
+  return (Array.isArray(person?.contacts) ? person.contacts : []).filter((c) => c && typeof c === 'object' && DAY.test(c.date || ''))
+}
+
 const clip = (t, n = 60) => (t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t)
-const where = (seg) => (seg.where === 'a tag' ? `the tag "${seg.raw}"` : `${seg.where}: "${clip(seg.raw)}"`)
+const where = (seg) =>
+  seg.where === 'a tag' ? `the tag "${seg.raw}"` : seg.where === 'a flag' ? `your flag "${seg.raw}"` : `${seg.where}: "${clip(seg.raw)}"`
 
 /**
  * Which people a keyword would match right now. Used to preview a want or a don't-want BEFORE it is saved,
@@ -236,7 +440,10 @@ export function hasCriteria(raw) {
     c.dealTags.length > 0 ||
     splitWords(c.wantWords).length > 0 ||
     splitWords(c.avoidWords).length > 0 ||
-    splitWords(c.softAvoidWords).length > 0
+    splitWords(c.softAvoidWords).length > 0 ||
+    c.ageMin !== null ||
+    c.ageMax !== null ||
+    splitPlaces(c.places).length > 0
   )
 }
 
@@ -254,7 +461,7 @@ function readTrait(trait, person, text) {
  * verdict: 'pursue' | 'watch' | 'letgo' | 'unknown'
  * flags: [{ side: 'want'|'avoid', level, label, detail }] one entry per want or don't-want that showed up for this person.
  */
-export function evaluate(person, dates, rawCriteria, model = null) {
+export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
   // model (optional): { weightFor(traitId, stated) -> {weight, statedWeight, shift, reason}, thresholdShift, thresholdReason }
   // When absent, behavior is identical to the stated-criteria-only scorer.
   const criteria = normalizeCriteria(rawCriteria)
@@ -357,6 +564,29 @@ export function evaluate(person, dates, rawCriteria, model = null) {
     }
   }
 
+  // 3b. Age and place. Missing data is never held against someone: no age or location means no check.
+  const hitLimit = (key, level, label, detail) => {
+    if (level === 'redline') {
+      reds.push({ key, text: `Red line triggered: ${label.toLowerCase()} (${detail}).` })
+      flags.push({ side: 'avoid', level: 'redline', label, detail })
+    } else {
+      softs.push({ text: `Would rather not: ${label.toLowerCase()} (${detail}).` })
+      flags.push({ side: 'avoid', level: 'rathernot', label, detail })
+    }
+  }
+  const theirAge = parseAge(person.age)
+  if (theirAge !== null && (criteria.ageMin !== null || criteria.ageMax !== null)) {
+    const range = criteria.ageMin !== null && criteria.ageMax !== null ? `${criteria.ageMin} to ${criteria.ageMax}` : criteria.ageMin !== null ? `${criteria.ageMin} or older` : `${criteria.ageMax} or younger`
+    if ((criteria.ageMin !== null && theirAge < criteria.ageMin) || (criteria.ageMax !== null && theirAge > criteria.ageMax)) {
+      hitLimit('age', criteria.ageLevel, 'Age outside your range', `they are ${theirAge}, you said ${range}`)
+    }
+  }
+  const okPlaces = splitPlaces(criteria.places)
+  const theirPlace = norm(person.location).trim()
+  if (okPlaces.length && theirPlace && !okPlaces.some((pl) => has(theirPlace, pl))) {
+    hitLimit('place', criteria.placesLevel, 'Outside your places', `they are in "${clip(String(person.location).trim(), 30)}", you said ${okPlaces.join(', ')}`)
+  }
+
   // 4. Free-form words you typed.
   const wantW = splitWords(criteria.wantWords)
   const redW = splitWords(criteria.avoidWords)
@@ -401,6 +631,73 @@ export function evaluate(person, dates, rawCriteria, model = null) {
     else reasons.push({ kind: 'warn', text: `Your dates with them average ${avgRating.toFixed(1)} of 5, a middling result.` })
   }
 
+  // Direct point adjustments from follow-ups (+/-6), contact history (+/-4), how you felt (+/-4), and reflections (+/-4): together at most 10 points either way.
+  let profileAdjust = 0
+
+  // 5b. Where the last date left off: the most recent follow-up you recorded (weight 2).
+  const followed = mine.filter((d) => d.followUp && d.followUp !== 'none' && FOLLOW_SCORE[d.followUp] !== undefined).sort((a, b) => String(b.date).localeCompare(String(a.date)))
+  if (followed.length) {
+    const f = followed[0]
+    const pts = Math.round((FOLLOW_SCORE[f.followUp] - 0.5) * 12) // planned +6, not continuing -6
+    profileAdjust += pts
+    evidenceHits += 1
+    reasons.push({ kind: pts > 0 ? 'good' : pts < 0 ? 'bad' : 'unknown', text: `Your last logged follow-up: ${FOLLOW_TEXT[f.followUp]}${pts ? ` (${pts > 0 ? '+' : ''}${pts} points)` : ''}.` })
+  }
+
+  // 5c. How much you are actually in touch (weight 1). Only counts real contact you logged, in either direction,
+  // so it reflects the connection, not just them. No logged contact means no opinion.
+  const today = opts.today && DAY.test(opts.today) ? opts.today : localToday()
+  const touch = realContacts(person).filter((c) => !isSystemContact(c))
+  if (touch.length) {
+    const ago = (c) => Math.round((dayMs(today) - dayMs(c.date)) / 86400000)
+    const gaps = touch.map(ago).filter((n) => n >= 0)
+    if (gaps.length) {
+      const last = Math.min(...gaps)
+      const month = gaps.filter((n) => n <= 30).length
+      const recency = last <= 3 ? 1 : last <= 7 ? 0.8 : last <= 14 ? 0.5 : last <= 30 ? 0.25 : 0
+      const freq = month >= 8 ? 1 : month >= 4 ? 0.7 : month >= 2 ? 0.4 : month === 1 ? 0.2 : 0
+      const engagement = (recency + freq) / 2
+      const pts = Math.round((engagement - 0.5) * 8) // very active +4, gone quiet -4
+      profileAdjust += pts
+      reasons.push({
+        kind: pts > 0 ? 'good' : pts < 0 ? 'warn' : 'unknown',
+        text: `Contact: last logged ${last === 0 ? 'today' : last === 1 ? 'yesterday' : last + ' days ago'}, ${month} in the past 30 days${pts ? ` (${pts > 0 ? '+' : ''}${pts} points)` : ''}.`
+      })
+    }
+  }
+
+  // 5d. How you have felt around them: your most recent five moments that carry a feeling (up to 4 points either way).
+  const felt = momentsOf(person).filter((m) => m.feeling).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)
+  if (felt.length) {
+    const avg = felt.reduce((sum, m) => sum + FEELING_VALUE[m.feeling], 0) / felt.length
+    const pts = Math.round(avg * 4)
+    profileAdjust += pts
+    evidenceHits += 1
+    const mood = avg >= 0.6 ? 'great' : avg >= 0.25 ? 'good' : avg > -0.25 ? 'mixed' : avg > -0.6 ? 'uneasy' : 'rough'
+    reasons.push({
+      kind: pts > 0 ? 'good' : pts < 0 ? 'warn' : 'unknown',
+      text: `How you have felt around them: mostly ${mood} across ${felt.length} moment${felt.length === 1 ? '' : 's'}${pts ? ` (${pts > 0 ? '+' : ''}${pts} points)` : ''}.`
+    })
+  }
+
+  // 5e. Your own reflections after dates: the most recent three that have quick answers (up to 4 points either way).
+  const reflected = mine
+    .map((d) => ({ date: String(d.date || ''), score: reflectionScore(reflectionOf(d)) }))
+    .filter((x) => x.score !== null)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 3)
+  if (reflected.length) {
+    const avg = reflected.reduce((sum, x) => sum + x.score, 0) / reflected.length
+    const pts = Math.round(avg * 4)
+    profileAdjust += pts
+    evidenceHits += 1
+    const mood = avg >= 0.5 ? 'positive' : avg >= 0.15 ? 'leaning positive' : avg > -0.15 ? 'mixed' : avg > -0.5 ? 'leaning negative' : 'negative'
+    reasons.push({
+      kind: pts > 0 ? 'good' : pts < 0 ? 'warn' : 'unknown',
+      text: `After your reflections on ${reflected.length} date${reflected.length === 1 ? '' : 's'}: ${mood}${pts ? ` (${pts > 0 ? '+' : ''}${pts} points)` : ''}.`
+    })
+  }
+
   // 6. Red-flag tags they carry that were not red lines still count against them.
   const redCount = (person.tags || []).filter((t) =>
     ['inconsistent', 'slowreply', 'vague', 'selfabsorbed', 'pushy'].includes(t)
@@ -408,10 +705,20 @@ export function evaluate(person, dates, rawCriteria, model = null) {
   const greenCount = (person.tags || []).filter((t) =>
     ['communicator', 'consistent', 'dogs', 'funny', 'ambitious'].includes(t)
   ).length
+  // Flags you typed yourself count exactly like the built-in ones: red lowers, green raises.
+  const custom = customFlagsOf(person)
+  const customGreen = custom.filter((f) => f.kind === 'green').length
+  const customRed = custom.filter((f) => f.kind === 'red').length
+  if (custom.length) {
+    reasons.push({
+      kind: customRed > customGreen ? 'warn' : customGreen > customRed ? 'good' : 'unknown',
+      text: `Flags you added: ${customGreen} green, ${customRed} red (${custom.map((f) => f.label).slice(0, 3).join(', ')}${custom.length > 3 ? ', …' : ''}).`
+    })
+  }
   possible += 2
-  earned += Math.max(0, Math.min(2, 1 + (greenCount - redCount) * 0.4))
+  earned += Math.max(0, Math.min(2, 1 + (greenCount + customGreen - redCount - customRed) * 0.4))
 
-  const baseScore = possible > 0 ? Math.round((earned / possible) * 100) : 0
+  const baseScore = Math.max(0, Math.min(100, (possible > 0 ? Math.round((earned / possible) * 100) : 0) + Math.max(-10, Math.min(10, profileAdjust))))
   // "Would rather not" lowers the score by a fixed, visible amount. It is capped so a pile of small dislikes
   // cannot behave like a red line.
   const penalty = Math.min(SOFT_CAP, SOFT_PENALTY * softs.length)
@@ -455,6 +762,34 @@ export function evaluate(person, dates, rawCriteria, model = null) {
   // Guardrail: "would rather not" lowers the score but never forces "let go" by itself.
   if (verdict === 'letgo' && reds.length === 0 && softs.length > 0 && baseScore >= WATCH_AT) verdict = 'watch'
 
+  // The four parts of the explanation: what fits, how much we know, what has not been explored, and how it has felt.
+  const unknowns = []
+  for (const trait of TRAITS) {
+    if (!criteria.wants[trait.id] && !criteria.avoids[trait.id]) continue
+    const sig = readTrait(trait, person, text)
+    if (!sig.positive && !sig.negative) unknowns.push(`${trait.label}: nothing recorded yet.`)
+  }
+  if ((criteria.ageMin !== null || criteria.ageMax !== null) && parseAge(person.age) === null) unknowns.push('Age: not on their profile yet.')
+  if (splitPlaces(criteria.places).length && !norm(person.location).trim()) unknowns.push('Location: not on their profile yet.')
+  if (wantW.length && !gotWant.length) unknowns.push('Good signs you look for: none noted yet.')
+
+  const allReasons = [
+    ...dealTexts.map((t) => ({ kind: 'bad', dup: true, text: t })),
+    ...reasons.sort((a, b) => order[a.kind] - order[b.kind])
+  ].map((r) => ({ ...r, section: sectionOf(r) }))
+
+  const evidence = {
+    confidence,
+    dates: mine.length,
+    reflections: mine.filter((d) => reflectionOf(d)).length,
+    notes: (person.notes || []).length,
+    contacts: touch.length,
+    moments: momentsOf(person).length,
+    plans: plansOf(person).length,
+    flags: (person.tags || []).length + custom.length,
+    remembered: rememberOf(person).length
+  }
+
   return {
     verdict,
     score,
@@ -463,10 +798,9 @@ export function evaluate(person, dates, rawCriteria, model = null) {
     confidence,
     dealbreakers: dealTexts,
     flags: flags.sort((a, b) => flagRank(a) - flagRank(b)),
-    reasons: [
-      ...dealTexts.map((t) => ({ kind: 'bad', dup: true, text: t })),
-      ...reasons.sort((a, b) => order[a.kind] - order[b.kind])
-    ],
+    reasons: allReasons,
+    unknowns,
+    evidence,
     avgRating,
     dateCount: mine.length,
     adjustments
@@ -474,6 +808,15 @@ export function evaluate(person, dates, rawCriteria, model = null) {
 }
 
 const order = { bad: 0, warn: 1, good: 2, unknown: 3 }
+// Which of the four explanation sections a reason belongs to.
+export function sectionOf(r) {
+  if (r.kind === 'unknown' && /nothing recorded yet/.test(r.text)) return 'unknowns'
+  if (/^(Your last logged follow-up|Contact:|How you have felt|After your reflections|Your dates with them average)/.test(r.text)) return 'experience'
+  return 'compatibility'
+}
+// How positive each follow-up is, and how it reads in a reason.
+const FOLLOW_SCORE = { planned: 1, me: 0.6, them: 0.5, done: 0 }
+const FOLLOW_TEXT = { planned: 'a next date is planned', me: 'you still want to text them', them: 'you are waiting on them', done: 'you marked it as not continuing' }
 const flagRank = (f) => (f.side === 'avoid' ? (f.level === 'redline' ? 0 : 1) : 2)
 
 export const VERDICT = {
