@@ -272,12 +272,6 @@ export const emptyCriteria = {
   wantWords: '',
   avoidWords: '', // red line words
   softAvoidWords: '', // would-rather-not words
-  // Age range and places you are open to. Outside them counts as a don't-want at the chosen strength.
-  ageMin: null,
-  ageMax: null,
-  ageLevel: 'rathernot',
-  places: '', // comma separated, matched against a person's location
-  placesLevel: 'rathernot',
   note: ''
 }
 
@@ -301,20 +295,7 @@ export function normalizeCriteria(c) {
     if (ids.has(id) && (v === 'redline' || v === 'rathernot')) avoids[id] = v
   }
   const str = (x) => (typeof x === 'string' ? x : '')
-  const age = (x) => {
-    const n = typeof x === 'number' ? x : typeof x === 'string' && x.trim() !== '' ? Number(x) : NaN
-    return Number.isInteger(n) && n >= 18 && n <= 120 ? n : null
-  }
-  let ageMin = age(c.ageMin)
-  let ageMax = age(c.ageMax)
-  if (ageMin !== null && ageMax !== null && ageMin > ageMax) [ageMin, ageMax] = [ageMax, ageMin]
-  const lvl = (x) => (x === 'redline' || x === 'rathernot' ? x : 'rathernot')
   return {
-    ageMin,
-    ageMax,
-    ageLevel: lvl(c.ageLevel),
-    places: str(c.places),
-    placesLevel: lvl(c.placesLevel),
     wants,
     avoids,
     dealTags: Array.isArray(c.dealTags) ? c.dealTags.filter((x) => typeof x === 'string') : [],
@@ -398,14 +379,6 @@ function findSegment(segs, phrase, unnegated) {
   return null
 }
 
-export const splitPlaces = (str) =>
-  (str || '').split(/[\n,;]+/).map((w) => norm(w).trim()).filter((w) => w.length >= 2)
-
-export function parseAge(v) {
-  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number.parseInt(v, 10) : NaN
-  return Number.isInteger(n) && n >= 18 && n <= 120 ? n : null
-}
-
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const dayMs = (d) => (DAY.test(d) ? Date.parse(d + 'T00:00:00Z') : NaN)
 const localToday = () => {
@@ -442,10 +415,7 @@ export function hasCriteria(raw) {
     c.dealTags.length > 0 ||
     splitWords(c.wantWords).length > 0 ||
     splitWords(c.avoidWords).length > 0 ||
-    splitWords(c.softAvoidWords).length > 0 ||
-    c.ageMin !== null ||
-    c.ageMax !== null ||
-    splitPlaces(c.places).length > 0
+    splitWords(c.softAvoidWords).length > 0
   )
 }
 
@@ -564,29 +534,6 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
       softs.push({ text: `Would rather not: ${trait.avoidLabel.toLowerCase()} (${detail}).` })
       flags.push({ side: 'avoid', level: 'rathernot', label: trait.avoidLabel, detail })
     }
-  }
-
-  // 3b. Age and place. Missing data is never held against someone: no age or location means no check.
-  const hitLimit = (key, level, label, detail) => {
-    if (level === 'redline') {
-      reds.push({ key, text: `Red line triggered: ${label.toLowerCase()} (${detail}).` })
-      flags.push({ side: 'avoid', level: 'redline', label, detail })
-    } else {
-      softs.push({ text: `Would rather not: ${label.toLowerCase()} (${detail}).` })
-      flags.push({ side: 'avoid', level: 'rathernot', label, detail })
-    }
-  }
-  const theirAge = parseAge(person.age)
-  if (theirAge !== null && (criteria.ageMin !== null || criteria.ageMax !== null)) {
-    const range = criteria.ageMin !== null && criteria.ageMax !== null ? `${criteria.ageMin} to ${criteria.ageMax}` : criteria.ageMin !== null ? `${criteria.ageMin} or older` : `${criteria.ageMax} or younger`
-    if ((criteria.ageMin !== null && theirAge < criteria.ageMin) || (criteria.ageMax !== null && theirAge > criteria.ageMax)) {
-      hitLimit('age', criteria.ageLevel, 'Age outside your range', `they are ${theirAge}, you said ${range}`)
-    }
-  }
-  const okPlaces = splitPlaces(criteria.places)
-  const theirPlace = norm(person.location).trim()
-  if (okPlaces.length && theirPlace && !okPlaces.some((pl) => has(theirPlace, pl))) {
-    hitLimit('place', criteria.placesLevel, 'Outside your places', `they are in "${clip(String(person.location).trim(), 30)}", you said ${okPlaces.join(', ')}`)
   }
 
   // 4. Free-form words you typed.
@@ -771,8 +718,6 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
     const sig = readTrait(trait, person, text)
     if (!sig.positive && !sig.negative) unknowns.push(`${trait.label}: nothing recorded yet.`)
   }
-  if ((criteria.ageMin !== null || criteria.ageMax !== null) && parseAge(person.age) === null) unknowns.push('Age: not on their profile yet.')
-  if (splitPlaces(criteria.places).length && !norm(person.location).trim()) unknowns.push('Location: not on their profile yet.')
   if (wantW.length && !gotWant.length) unknowns.push('Good signs you look for: none noted yet.')
 
   const allReasons = [

@@ -1,21 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   Users, CalendarHeart, BarChart3, Plus, X, Mic, Square,
   Star, Trash2, Archive, ArchiveRestore, Download, Upload, Scale,
-  MessageCircle, Sparkles, Heart, Flag, History, Settings as SettingsIcon, Lock, Undo2, Bell, CalendarClock
+  MessageCircle, Sparkles, Heart, Flag, History, Settings as SettingsIcon, Lock, Undo2, Bell, CalendarClock,
+  Camera, LayoutGrid, User, Check, ChevronRight
 } from 'lucide-react'
 import {
   useStore, uid, STATUSES, ACTIVE_STATUSES, END_REASONS, isActive, TAGS, agoLabel, daysSince, fmtDate, lastContactOf, todayDay
 } from './store.js'
 import { useSpeech, summarizeToBullets } from './useSpeech.js'
-import { buildTimeline, dayParts } from './timeline.js'
-import { buildToday, daysBetween } from './today.js'
+import { buildTimeline, dayParts, reflectionChips } from './timeline.js'
+import { fileToPhoto, initialsOf } from './photos.js'
+import { loadDraft, saveDraft, clearDraft, clearAllDrafts, draftCount } from './drafts.js'
+import { buildToday, daysBetween, weekStrip } from './today.js'
 import { activityAverages, themes, reflectionTrends, emotionSeries } from './patterns.js'
 import { LOCK_CHOICES } from './settings.js'
 import { hasPin, setPin, verifyPin, clearPin, waitLeft, recordFail, resetFails, PIN_RE } from './lock.js'
 import { PROMPT_CATEGORIES, candidates as promptCandidates, usedPromptIds } from './prompts.js'
 import { encryptBackup, decryptBackup, isEncryptedBackup, MIN_PASSPHRASE } from './vault.js'
-import { plansOf, rememberOf, reflectionOf, REMEMBER_KINDS, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS, MAX_PLAN_TEXT, MAX_REMEMBER_TEXT, MAX_REFLECTION_NOTE, MAX_REFLECTION_JOURNAL, momentsOf, FEELINGS, MOMENT_TYPES, MAX_MOMENT_TEXT, customFlagsOf, MAX_CUSTOM_FLAGS, MAX_FLAG_LENGTH, TRAITS, WANT_LEVELS, AVOID_LEVELS, VERDICT, SOFT_PENALTY, evaluate, hasCriteria, normalizeCriteria, splitWords, splitPlaces, wordHits } from './fit.js'
+import { plansOf, rememberOf, reflectionOf, REMEMBER_KINDS, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS, MAX_PLAN_TEXT, MAX_REMEMBER_TEXT, MAX_REFLECTION_NOTE, MAX_REFLECTION_JOURNAL, momentsOf, FEELINGS, MOMENT_TYPES, MAX_MOMENT_TEXT, customFlagsOf, MAX_CUSTOM_FLAGS, MAX_FLAG_LENGTH, TRAITS, WANT_LEVELS, AVOID_LEVELS, VERDICT, SOFT_PENALTY, evaluate, hasCriteria, normalizeCriteria, splitWords, wordHits } from './fit.js'
 import { buildModel, adjustedWeight, MIN_FEEDBACK } from './learn.js'
 import { parseDescription } from './describe.js'
 
@@ -25,25 +28,99 @@ const todayISO = () => todayDay()
 
 /* ---------- small pieces ---------- */
 
-function Sheet({ title, onClose, children }) {
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])'
+const prefersReducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+// A dialog that behaves like one: focus moves in when it opens, Tab stays inside, Escape closes it, and focus goes back
+// to whatever opened it. An optional footer stays pinned to the bottom (for a Save button).
+function Sheet({ title, onClose, children, footer = null }) {
+  const ref = useRef(null)
+  const titleId = useId()
+  useEffect(() => {
+    const opener = document.activeElement
+    ref.current?.focus({ preventScroll: true })
+    return () => {
+      if (opener && opener !== document.body && document.contains(opener)) opener.focus({ preventScroll: true })
+      else document.querySelector('[role=tab][aria-selected=true]')?.focus({ preventScroll: true })
+    }
+  }, [])
+  const onKeyDown = (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); onClose(); return }
+    if (e.key !== 'Tab' || !ref.current) return
+    const items = [...ref.current.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null)
+    if (items.length === 0) { e.preventDefault(); ref.current.focus(); return }
+    const first = items[0]
+    const last = items[items.length - 1]
+    const at = document.activeElement
+    if (e.shiftKey && (at === first || at === ref.current)) { e.preventDefault(); last.focus() }
+    else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus() }
+  }
   return (
     <div className="sheet-back" onClick={onClose}>
-      <div
-        className="sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={ref} onKeyDown={onKeyDown} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head">
-          <h2>{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <X size={22} />
           </button>
         </div>
         {children}
+        {footer && <div className="sheet-foot">{footer}</div>}
       </div>
     </div>
+  )
+}
+
+// A short message tied to the field it is about, so a screen reader reads it with the field.
+const errProps = (id, msg) => (msg ? { 'aria-invalid': true, 'aria-describedby': id } : {})
+function FieldError({ id, msg }) {
+  return msg ? <p id={id} className="ferr" role="alert">{msg}</p> : null
+}
+
+// Keeps an unfinished form on this device so closing it by accident does not lose it. Nothing is restored without asking.
+function useDraft(kind, values, enabled = true) {
+  const [pending, setPending] = useState(() => (enabled ? loadDraft(kind) : null))
+  const doneRef = useRef(false)
+  const latest = useRef(values)
+  const blocked = useRef(false)
+  useEffect(() => { latest.current = values; blocked.current = pending !== null })
+  useEffect(() => {
+    if (!enabled || doneRef.current || pending !== null) return undefined
+    const id = setTimeout(() => saveDraft(kind, values), 400)
+    return () => clearTimeout(id)
+  }, [kind, values, enabled, pending])
+  useEffect(() => () => {
+    if (enabled && !doneRef.current && !blocked.current) saveDraft(kind, latest.current)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return {
+    pending,
+    take: () => { const d = pending; setPending(null); return d },
+    discard: () => { clearDraft(kind); setPending(null) },
+    done: () => { doneRef.current = true; clearDraft(kind) }
+  }
+}
+
+function DraftBanner({ draft, what, onRestore, onDiscard }) {
+  if (!draft.pending) return null
+  return (
+    <div className="draftbar" role="region" aria-label="Unfinished draft">
+      <p>You have an unfinished {what} saved on this device. Would you like to pick up where you left off?</p>
+      <div className="btnrow" style={{ marginTop: 8 }}>
+        <button type="button" className="btn ghost" onClick={onDiscard}>Discard it</button>
+        <button type="button" className="btn rose" onClick={onRestore}>Restore it</button>
+      </div>
+    </div>
+  )
+}
+
+const TINTS = ['#f4d9d0', '#e3dcef', '#d9e8de', '#f2e6d3', '#f0d6df']
+const tintFor = (id) => TINTS[[...String(id || '')].reduce((n, c) => n + c.charCodeAt(0), 0) % TINTS.length]
+
+function Avatar({ person, large = false }) {
+  return person.photo ? (
+    <img className={'avatar' + (large ? ' large' : '')} src={person.photo} alt="" />
+  ) : (
+    <span className={'avatar initials' + (large ? ' large' : '')} style={{ '--tint': tintFor(person.id) }} aria-hidden="true">{initialsOf(person.name)}</span>
   )
 }
 
@@ -350,23 +427,28 @@ function TimelineList({ entries, showPerson, onOpenPerson, onOpenDate, onDelete,
 }
 
 // Add something that is not a date or a contact: a conversation, a plan, a milestone, or how you felt.
-function AddMoment({ onAdd, onCancel, initial = null }) {
+function AddMoment({ onAdd, onCancel, initial = null, draftKey = null }) {
   const [type, setType] = useState(initial?.momentType || 'conversation')
   const [day, setDay] = useState(initial?.date || todayDay())
   const [text, setText] = useState(initial?.text || '')
   const [feeling, setFeeling] = useState(initial?.feeling || '')
   const [msg, setMsg] = useState('')
   const speech = useSpeech((t) => setText((cur) => (cur ? cur + ' ' : '') + t))
+  const draft = useDraft(draftKey || 'moment:none', { type, date: day, text, feeling }, Boolean(draftKey) && !initial)
 
   const save = () => {
-    if (!day) return setMsg('Pick the day.')
-    if (!text.trim() && !feeling) return setMsg('Write something, or pick how it felt.')
+    if (!day) return setMsg('Pick the day this happened. What you wrote is still here.')
+    if (day > todayDay()) return setMsg('That day has not happened yet. Pick today or earlier, or use Plan a date for something ahead. What you wrote is still here.')
+    if (!text.trim() && !feeling) return setMsg('Write a line about it, or pick how it felt, then save.')
     onAdd({ date: day, type, text: text.trim().slice(0, MAX_MOMENT_TEXT), feeling: feeling || null })
+    draft.done()
   }
+  const restore = () => { const d = draft.take(); if (d) { setType(d.type); setDay(d.date || day); setText(d.text); setFeeling(d.feeling) } }
 
   return (
     <div className="stat" style={{ marginTop: 10 }}>
       <h4>{initial ? 'Edit moment' : 'Add a moment'}</h4>
+      <DraftBanner draft={draft} what="moment" onRestore={restore} onDiscard={draft.discard} />
       <div className="tagpick" role="group" aria-label="Kind of moment">
         {MOMENT_TYPES.map((t) => (
           <button key={t.id} type="button" className="plain" aria-pressed={type === t.id} onClick={() => setType(t.id)}>{t.label}</button>
@@ -379,7 +461,7 @@ function AddMoment({ onAdd, onCancel, initial = null }) {
       <label className="field">
         <span>What happened, or what you want to remember</span>
         <textarea className="in" maxLength={MAX_MOMENT_TEXT} value={text} placeholder="They told me about their sister. We planned a hike."
-          onChange={(e) => { setText(e.target.value); setMsg('') }} />
+          {...errProps('moment-err', msg)} onChange={(e) => { setText(e.target.value); setMsg('') }} />
       </label>
       {speech.supported && (
         <button type="button" className={'btn rose ' + (speech.listening ? 'pulse' : '')} onClick={speech.listening ? speech.stop : speech.start}>
@@ -399,7 +481,7 @@ function AddMoment({ onAdd, onCancel, initial = null }) {
       <p className="hint" style={{ margin: '6px 0 0' }}>
         Feelings count in Fit: your last five, up to 4 points either way, shared with the other profile signals under a 10 point cap.
       </p>
-      {msg && <div className="warn" role="status">{msg}</div>}
+      <FieldError id="moment-err" msg={msg} />
       <div className="btnrow">
         <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
         <button type="button" className="btn primary" onClick={save}>{initial ? 'Save changes' : 'Save moment'}</button>
@@ -408,7 +490,7 @@ function AddMoment({ onAdd, onCancel, initial = null }) {
   )
 }
 
-function ContactLog({ person, dates, store }) {
+function ContactLog({ person, dates, store, hideTalked = false }) {
   const [day, setDay] = useState(todayDay())
   const [note, setNote] = useState('')
   const last = lastContactOf(person, dates)
@@ -426,10 +508,12 @@ function ContactLog({ person, dates, store }) {
       <p className="hint" style={{ margin: '0 0 10px' }}>
         Last contact: {last ? `${agoLabel(last)} (${fmtDate(last)})` : 'none recorded'}. Logged dates count too.
       </p>
-      <button type="button" className="btn ghost" style={{ width: '100%', marginBottom: 12 }}
-        disabled={talkedToday} onClick={() => store.addContact(person.id, todayDay(), '')}>
-        {talkedToday ? 'Talked today ✓' : 'We talked today'}
-      </button>
+      {!hideTalked && (
+        <button type="button" className="btn ghost" style={{ width: '100%', marginBottom: 12 }}
+          disabled={talkedToday} onClick={() => store.addContact(person.id, todayDay(), '')}>
+          {talkedToday ? 'Talked today ✓' : 'We talked today'}
+        </button>
+      )}
 
       <div className="two" style={{ alignItems: 'end' }}>
         <label className="field" style={{ marginBottom: 0 }}>
@@ -543,15 +627,84 @@ function StatusPicker({ person, store }) {
   )
 }
 
-function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate }) {
+function ReflectionsSummary({ person, dates, onEditDate }) {
+  const mine = dates.filter((d) => d.personId === person.id).sort((a, b) => String(b.date).localeCompare(String(a.date)))
+  const done = mine.filter((d) => reflectionOf(d))
+  const cutoff = todayDay()
+  const open = mine.filter((d) => !reflectionOf(d) && daysBetween(d.date, cutoff) >= 0 && daysBetween(d.date, cutoff) <= 60).slice(0, 3)
+  const felt = momentsOf(person).filter((m) => m.feeling).sort((a, b) => b.date.localeCompare(a.date))
+  if (done.length === 0 && open.length === 0 && felt.length === 0) {
+    return <p className="hint" style={{ margin: 0 }}>Nothing here yet. After a date, reflect on how it felt, or add a moment with a feeling.</p>
+  }
+  return (
+    <div>
+      {done.map((d) => {
+        const r = reflectionOf(d)
+        return (
+          <div key={d.id} className="refl-item">
+            <strong>{fmtDate(d.date)}{d.activity ? `, ${d.activity}` : ''}</strong>
+            <div className="mini">{reflectionChips(r).map((c) => <span key={c} className="tag plain">{c}</span>)}</div>
+            {r.understand && <p className="hint" style={{ margin: '6px 0 0' }}>To understand: {r.understand}</p>}
+            {r.journal && <p style={{ margin: '6px 0 0', fontSize: 15 }}>{r.journal.length > 140 ? r.journal.slice(0, 140) + '…' : r.journal}</p>}
+            <button type="button" className="tl-link" onClick={() => onEditDate(d)}>Edit reflection</button>
+          </div>
+        )
+      })}
+      {open.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <span className="lbl">Not reflected on yet</span>
+          {open.map((d) => (
+            <p key={d.id} style={{ margin: '0 0 4px' }}>{fmtDate(d.date)}{d.activity ? `, ${d.activity}` : ''}{' '}
+              <button type="button" className="tl-link" onClick={() => onEditDate(d, true)}>Reflect</button></p>
+          ))}
+        </div>
+      )}
+      {felt.length > 0 && (
+        <p className="hint" style={{ margin: '10px 0 0' }}>{felt.length} moment{felt.length === 1 ? '' : 's'} with a feeling. Latest: {FEELINGS.find((f) => f.id === felt[0].feeling)?.label} on {fmtDate(felt[0].date)}.</p>
+      )}
+    </div>
+  )
+}
+
+function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onOpenFit }) {
   const [adding, setAdding] = useState(false)
   const [editMoment, setEditMoment] = useState(null)
+  const [photoMsg, setPhotoMsg] = useState('')
+  const photoRef = useRef(null)
   const show = store.data.settings.profile
   const set = (patch) => store.updatePerson(person.id, patch)
-  const mine = dates.filter((d) => d.personId === person.id)
+  const today = todayDay()
+  const s = statusOf(person.status)
 
+  const talkedToday = (person.contacts || []).some((c) => c.date === today && !/^matched$/i.test((c.note || '').trim()))
+  const next = plansOf(person).filter((x) => x.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0]
+  const last = buildTimeline([person], dates, { personId: person.id }).find((e) => e.kind !== 'plan' && e.kind !== 'matched' && e.date && e.date <= today)
+  const highlight = momentsOf(person).filter((m) => m.text).sort((a, b) => b.date.localeCompare(a.date))[0]?.text || rememberOf(person).find((r) => !r.done)?.text
+  const details = [person.age && `${person.age}`, person.job, person.location, person.met && `via ${person.met}`].filter(Boolean).join(' · ')
+  const fit = useMemo(() => (hasCriteria(store.data.criteria) ? evaluate(person, dates, store.data.criteria, null) : null), [person, dates, store.data.criteria])
+
+  const sections = [
+    { id: 'about', label: 'About', on: true },
+    { id: 'plans', label: 'Plans', on: show.plans || show.remember || show.prompts },
+    { id: 'reflections', label: 'Reflections', on: true },
+    { id: 'fit', label: 'Fit', on: true },
+    { id: 'timeline', label: 'Timeline', on: show.timeline }
+  ].filter((x) => x.on)
+
+  const goTo = (id) => {
+    const el = document.getElementById('sec-' + id)
+    if (!el) return
+    if (el.tagName === 'DETAILS') el.open = true
+    el.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' })
+  }
+  const onPhoto = async (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    try { set({ photo: await fileToPhoto(f) }); setPhotoMsg('') } catch (err) { setPhotoMsg(err.message) }
+  }
   const remove = () => {
-    if (confirm(`Delete ${person.name} and all their date records? This cannot be undone.`)) {
+    if (confirm(`Delete ${person.name} and all their date records? You can undo for a few seconds.`)) {
       store.deletePerson(person.id)
       onClose()
     }
@@ -559,99 +712,159 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate }) {
 
   return (
     <Sheet title={person.name || 'Profile'} onClose={onClose}>
-      <StatusPicker key={person.id + ':' + person.status} person={person} store={store} />
-
-      <label className="field">
-        <span>Name</span>
-        <input className="in" value={person.name} onChange={(e) => set({ name: e.target.value })} />
-      </label>
-      <div className="two">
-        <label className="field">
-          <span>Age</span>
-          <input className="in" inputMode="numeric" value={person.age} onChange={(e) => set({ age: e.target.value })} />
-        </label>
-        <label className="field">
-          <span>Location</span>
-          <input className="in" value={person.location} onChange={(e) => set({ location: e.target.value })} />
-        </label>
+      <div className="phero">
+        <div className="phero-photo">
+          <Avatar person={person} large />
+          <button type="button" className="pcamera" aria-label={person.photo ? 'Change photo' : 'Add a photo'} onClick={() => photoRef.current?.click()}><Camera size={18} aria-hidden="true" /></button>
+        </div>
+        <div className="phero-main">
+          <span className="ppill inline">{s.label}</span>
+          {details && <p className="hint" style={{ margin: '8px 0 0' }}>{details}</p>}
+          {person.photo && <button type="button" className="tl-link" onClick={() => set({ photo: '' })}>Remove photo</button>}
+        </div>
       </div>
-      <label className="field">
-        <span>Occupation</span>
-        <input className="in" value={person.job} onChange={(e) => set({ job: e.target.value })} />
-      </label>
-      <label className="field">
-        <span>How you met</span>
-        <input className="in" value={person.met} onChange={(e) => set({ met: e.target.value })} />
-      </label>
+      <input ref={photoRef} type="file" accept="image/*" hidden aria-label="Photo file" onChange={onPhoto} />
+      {photoMsg && <p className="ferr" role="alert">{photoMsg}</p>}
 
-      {show.flags && (
-        <>
-          <div className="section">Green and red flags</div>
-          <FlagEditor person={person} set={set} />
-        </>
+      <div className="pactions">
+        <button className="btn rose" onClick={onLogDate}><CalendarHeart size={18} /> Log a date</button>
+        <button className="btn ghost" disabled={talkedToday} onClick={() => store.addContact(person.id, today, '')}>
+          {talkedToday ? 'Talked today ✓' : 'We talked today'}
+        </button>
+        {show.timeline && (
+          <button className="btn ghost" onClick={() => { setAdding(true); setEditMoment(null); setTimeout(() => goTo('timeline'), 0) }}><Sparkles size={18} /> Add a moment</button>
+        )}
+      </div>
+
+      <dl className="glance" aria-label="At a glance">
+        <div>
+          <dt>Next plan</dt>
+          <dd>{next ? <>{fmtDate(next.date)}: {next.title || 'Planned date'}{next.place ? ` at ${next.place}` : ''} <span className="tag green">{daysLabel(daysBetween(today, next.date))}</span></> : 'Nothing planned'}</dd>
+        </div>
+        <div>
+          <dt>Last interaction</dt>
+          <dd>{last ? `${agoLabel(last.date)}: ${last.kind === 'date' ? (last.title === 'Date' ? 'a date' : last.title) : last.kind === 'moment' ? last.title.toLowerCase() : 'in touch'}` : 'Nothing logged yet'}</dd>
+        </div>
+        <div>
+          <dt>Worth remembering</dt>
+          <dd>{highlight ? (highlight.length > 110 ? highlight.slice(0, 110) + '…' : highlight) : 'Nothing saved yet'}</dd>
+        </div>
+      </dl>
+
+      <nav className="profile-nav" aria-label="Profile sections">
+        {sections.map((x) => <button key={x.id} type="button" onClick={() => goTo(x.id)}>{x.label}</button>)}
+      </nav>
+
+      <details id="sec-about" className="psec" open>
+        <summary>About them</summary>
+        <div className="pcontent">
+          <StatusPicker key={person.id + ':' + person.status} person={person} store={store} />
+          <label className="field">
+            <span>Name</span>
+            <input className="in" value={person.name} onChange={(e) => set({ name: e.target.value })} />
+          </label>
+          <div className="two">
+            <label className="field">
+              <span>Age</span>
+              <input className="in" inputMode="numeric" value={person.age} onChange={(e) => set({ age: e.target.value })} />
+            </label>
+            <label className="field">
+              <span>Location</span>
+              <input className="in" value={person.location} onChange={(e) => set({ location: e.target.value })} />
+            </label>
+          </div>
+          <label className="field">
+            <span>Occupation</span>
+            <input className="in" value={person.job} onChange={(e) => set({ job: e.target.value })} />
+          </label>
+          <label className="field">
+            <span>How you met</span>
+            <input className="in" value={person.met} onChange={(e) => set({ met: e.target.value })} />
+          </label>
+          {show.flags && (
+            <>
+              <div className="section">Green and red flags</div>
+              <FlagEditor person={person} set={set} />
+            </>
+          )}
+        </div>
+      </details>
+
+      {(show.plans || show.remember || show.prompts) && (
+        <details id="sec-plans" className="psec">
+          <summary>Plans and reminders</summary>
+          <div className="pcontent">
+            {show.plans && (
+              <>
+                <div className="section">Plan a date</div>
+                <PlanSection person={person} store={store} onLogDate={onLogDate} />
+              </>
+            )}
+            {show.remember && (
+              <>
+                <div className="section">Remember for next time</div>
+                <RememberSection person={person} store={store} />
+              </>
+            )}
+            {show.prompts && <PromptSection person={person} dates={dates} store={store} />}
+          </div>
+        </details>
       )}
 
-      {show.plans && (
-        <>
-          <div className="section">Plan a date</div>
-          <PlanSection person={person} store={store} onLogDate={onLogDate} />
-        </>
-      )}
+      <details id="sec-reflections" className="psec">
+        <summary>My reflections</summary>
+        <div className="pcontent"><ReflectionsSummary person={person} dates={dates} onEditDate={onEditDate} /></div>
+      </details>
 
-      {show.remember && (
-        <>
-          <div className="section">Remember for next time</div>
-          <RememberSection person={person} store={store} />
-        </>
-      )}
-      {show.prompts && <PromptSection person={person} dates={dates} store={store} />}
+      <details id="sec-fit" className="psec">
+        <summary>Compatibility</summary>
+        <div className="pcontent">
+          {fit ? (
+            <>
+              <p style={{ margin: '0 0 8px' }}><strong>{VERDICT[fit.verdict].label}</strong>, with {fit.confidence} confidence.</p>
+              <FlagList flags={fit.flags.slice(0, 4)} />
+              <p className="hint">A mirror of your own notes against your own standards. You make the call.</p>
+            </>
+          ) : (
+            <p className="hint" style={{ margin: '0 0 8px' }}>Say what you are looking for in the Fit tab to see how this connection lines up.</p>
+          )}
+          <button type="button" className="btn ghost" onClick={onOpenFit}>Open in Fit</button>
+        </div>
+      </details>
 
       {show.timeline && (
-        <>
-      <div className="section">Timeline</div>
-      <ContactLog person={person} dates={dates} store={store} />
-      {adding || editMoment ? (
-        <AddMoment
-          key={editMoment?.refId || 'new'}
-          initial={editMoment}
-          onCancel={() => { setAdding(false); setEditMoment(null) }}
-          onAdd={(m) => {
-            if (editMoment) store.updateMoment(person.id, editMoment.refId, m)
-            else store.addMoment(person.id, m)
-            setAdding(false); setEditMoment(null)
-          }}
-        />
-      ) : (
-        <button type="button" className="btn ghost" style={{ width: '100%', marginTop: 10 }} onClick={() => setAdding(true)}>
-          <Sparkles size={18} /> Add a moment
-        </button>
-      )}
-      <div style={{ marginTop: 14 }}>
-        <TimelineList
-          entries={buildTimeline([person], dates, { personId: person.id, endReasons: END_REASONS })}
-          empty="Nothing here yet. Log a date, a contact, or a moment and it will appear in order."
-          onEdit={(e) => { setEditMoment(e); setAdding(false) }}
-          onOpenDate={(id) => { const d = dates.find((x) => x.id === id); if (d) onEditDate(d) }}
-          onDelete={(e) => {
-            if (e.kind === 'moment') store.deleteMoment(person.id, e.refId)
-            else if (e.kind === 'plan') store.deletePlan(person.id, e.refId)
-            else store.deleteContact(person.id, e.refId)
-          }}
-        />
-      </div>
-        </>
-      )}
-
-      <div className="btnrow" style={{ marginTop: 12 }}>
-        <button className="btn rose" onClick={onLogDate}>
-          <CalendarHeart size={18} /> Log a date
-        </button>
-      </div>
-
-      {mine.length > 0 && (
-        <p className="hint" style={{ marginTop: 12 }}>
-          {mine.length} date{mine.length > 1 ? 's' : ''} logged with {person.name}.
-        </p>
+        <details id="sec-timeline" className="psec">
+          <summary>Timeline</summary>
+          <div className="pcontent">
+            <ContactLog person={person} dates={dates} store={store} hideTalked />
+            {adding || editMoment ? (
+              <AddMoment
+                key={editMoment?.refId || 'new'}
+                initial={editMoment}
+                draftKey={'moment:' + person.id}
+                onCancel={() => { setAdding(false); setEditMoment(null) }}
+                onAdd={(m) => {
+                  if (editMoment) store.updateMoment(person.id, editMoment.refId, m)
+                  else store.addMoment(person.id, m)
+                  setAdding(false); setEditMoment(null)
+                }}
+              />
+            ) : null}
+            <div style={{ marginTop: 14 }}>
+              <TimelineList
+                entries={buildTimeline([person], dates, { personId: person.id, endReasons: END_REASONS })}
+                empty="Nothing here yet. Log a date, a contact, or a moment and it will appear in order."
+                onEdit={(e) => { setEditMoment(e); setAdding(false) }}
+                onOpenDate={(id) => { const d = dates.find((x) => x.id === id); if (d) onEditDate(d) }}
+                onDelete={(e) => {
+                  if (e.kind === 'moment') store.deleteMoment(person.id, e.refId)
+                  else if (e.kind === 'plan') store.deletePlan(person.id, e.refId)
+                  else store.deleteContact(person.id, e.refId)
+                }}
+              />
+            </div>
+          </div>
+        </details>
       )}
 
       <div className="btnrow" style={{ marginTop: 22 }}>
@@ -671,8 +884,6 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate }) {
   )
 }
 
-/* ---------- date sheet ---------- */
-
 function DateSheet({ people, initial, defaultPersonId, store, onClose, onCheckin, openReflection = false }) {
   const editing = Boolean(initial)
   const [personId, setPersonId] = useState(initial?.personId || defaultPersonId || people[0]?.id || '')
@@ -683,14 +894,31 @@ function DateSheet({ people, initial, defaultPersonId, store, onClose, onCheckin
   const [impressions, setImpressions] = useState(initial?.impressions || [])
   const [refl, setRefl] = useState(() => reflectionOf(initial) || {})
   const [showRefl, setShowRefl] = useState(Boolean(openReflection || reflectionOf(initial)))
+  const [errors, setErrors] = useState({})
+  const draft = useDraft('date', { personId, date, activity, rating, followUp, impressions, reflection: refl }, !editing)
+
+  const restore = () => {
+    const d = draft.take()
+    if (!d) return
+    if (d.personId && people.some((p) => p.id === d.personId)) setPersonId(d.personId)
+    if (d.date) setDate(d.date)
+    setActivity(d.activity); setRating(d.rating); setFollowUp(d.followUp); setImpressions(d.impressions)
+    if (Object.keys(d.reflection).length) { setRefl(d.reflection); setShowRefl(true) }
+  }
 
   const save = () => {
-    if (!personId) return
+    const errs = {}
+    if (!personId) errs.who = 'Choose who this date was with. Everything else you entered is still here.'
+    if (!date) errs.date = 'Pick the day of the date. Nothing you entered has been lost.'
+    else if (date > todayISO()) errs.date = 'Logged dates are ones that already happened. To plan one ahead, use Plan a date on their profile. Nothing you entered has been lost.'
+    setErrors(errs)
+    if (Object.keys(errs).length) return
     const payload = { personId, date, activity: activity.trim(), rating, followUp, impressions, reflection: reflectionOf({ reflection: refl }) }
     if (editing) {
       store.updateDate(initial.id, payload)
       onClose()
     } else {
+      draft.done()
       const newId = store.addDate(payload)
       if (onCheckin && rating > 0) onCheckin(personId, newId)
       else onClose()
@@ -716,71 +944,91 @@ function DateSheet({ people, initial, defaultPersonId, store, onClose, onCheckin
   }
 
   return (
-    <Sheet title={editing ? 'Edit date' : 'Log a date'} onClose={onClose}>
-      <label className="field">
-        <span>Who</span>
-        <select className="in" value={personId} onChange={(e) => setPersonId(e.target.value)}>
-          {people.map((p) => (
-            <option key={p.id} value={p.id}>{(p.name || 'Unnamed') + (p.status === 'ended' ? ' (let go)' : '')}</option>
-          ))}
-        </select>
-      </label>
-      <div className="two">
-        <label className="field">
-          <span>Date</span>
-          <input className="in" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>Activity</span>
-          <input className="in" value={activity} placeholder="Coffee, dinner…" onChange={(e) => setActivity(e.target.value)} />
-        </label>
-      </div>
-      <span className="lbl">Rating</span>
-      <Stars value={rating} onChange={setRating} />
-      <label className="field" style={{ marginTop: 14 }}>
-        <span>Follow-up</span>
-        <select className="in" value={followUp} onChange={(e) => setFollowUp(e.target.value)}>
-          <option value="none">Nothing yet</option>
-          <option value="me">I need to text them</option>
-          <option value="them">Waiting on them</option>
-          <option value="planned">Next date planned</option>
-          <option value="done">Not continuing</option>
-        </select>
-      </label>
+    <Sheet
+      title={editing ? 'Edit date' : 'Log a date'}
+      onClose={onClose}
+      footer={
+        <div className="btnrow" style={{ marginTop: 0 }}>
+          <button className="btn primary" onClick={save}>{editing ? 'Save changes' : 'Save date'}</button>
+        </div>
+      }
+    >
+      <DraftBanner draft={draft} what="date" onRestore={restore} onDiscard={draft.discard} />
 
-      <VoiceBox onBullets={(b) => setImpressions((prev) => [...prev, ...b])} />
-
-      {impressions.length > 0 && (
-        <>
-          <div className="section">Impressions</div>
-          <ul className="notes">
-            {impressions.map((n, i) => (
-              <li key={i}>
-                <span>{n}</span>
-                <button
-                  className="icon-btn"
-                  aria-label="Remove impression"
-                  onClick={() => setImpressions(impressions.filter((_, j) => j !== i))}
-                >
-                  <X size={16} />
-                </button>
-              </li>
+      <fieldset className="fgroup">
+        <legend>The basics</legend>
+        <label className="field">
+          <span>Who</span>
+          <select className="in" value={personId} {...errProps('date-who-err', errors.who)} onChange={(e) => { setPersonId(e.target.value); setErrors({}) }}>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>{(p.name || 'Unnamed') + (p.status === 'ended' ? ' (let go)' : '')}</option>
             ))}
-          </ul>
-        </>
-      )}
+          </select>
+        </label>
+        <FieldError id="date-who-err" msg={errors.who} />
+        <div className="two">
+          <label className="field">
+            <span>Date</span>
+            <input className="in" type="date" max={todayISO()} value={date} {...errProps('date-day-err', errors.date)} onChange={(e) => { setDate(e.target.value); setErrors({}) }} />
+          </label>
+          <label className="field">
+            <span>Activity</span>
+            <input className="in" value={activity} placeholder="Coffee, dinner…" onChange={(e) => setActivity(e.target.value)} />
+          </label>
+        </div>
+        <FieldError id="date-day-err" msg={errors.date} />
+      </fieldset>
 
-      {showRefl ? (
-        <ReflectionForm value={refl} onChange={setRefl} />
-      ) : (
-        <button type="button" className="btn ghost" style={{ width: '100%', marginTop: 12 }} onClick={() => setShowRefl(true)}>
-          <Sparkles size={18} /> Reflect on this date (optional)
-        </button>
-      )}
+      <fieldset className="fgroup">
+        <legend>My experience</legend>
+        <span className="lbl">Rating</span>
+        <Stars value={rating} onChange={setRating} />
 
-      <div className="btnrow" style={{ marginTop: 18 }}>
-        <button className="btn primary" onClick={save}>{editing ? 'Save changes' : 'Save date'}</button>
-      </div>
+        <VoiceBox onBullets={(b) => setImpressions((prev) => [...prev, ...b])} />
+
+        {impressions.length > 0 && (
+          <>
+            <span className="lbl" style={{ marginTop: 12 }}>Impressions</span>
+            <ul className="notes">
+              {impressions.map((n, i) => (
+                <li key={i}>
+                  <span>{n}</span>
+                  <button
+                    className="icon-btn"
+                    aria-label="Remove impression"
+                    onClick={() => setImpressions(impressions.filter((_, j) => j !== i))}
+                  >
+                    <X size={16} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {showRefl ? (
+          <ReflectionForm value={refl} onChange={setRefl} />
+        ) : (
+          <button type="button" className="btn ghost" style={{ width: '100%', marginTop: 12 }} onClick={() => setShowRefl(true)}>
+            <Sparkles size={18} /> Reflect on this date (optional)
+          </button>
+        )}
+      </fieldset>
+
+      <fieldset className="fgroup">
+        <legend>Follow-up</legend>
+        <label className="field">
+          <span>Where things stand</span>
+          <select className="in" value={followUp} onChange={(e) => setFollowUp(e.target.value)}>
+            <option value="none">Nothing yet</option>
+            <option value="me">I need to text them</option>
+            <option value="them">Waiting on them</option>
+            <option value="planned">Next date planned</option>
+            <option value="done">Not continuing</option>
+          </select>
+        </label>
+      </fieldset>
+
       {editing && (
         <div className="btnrow">
           <button className="btn danger" onClick={remove}><Trash2 size={18} /> Delete date</button>
@@ -789,9 +1037,6 @@ function DateSheet({ people, initial, defaultPersonId, store, onClose, onCheckin
     </Sheet>
   )
 }
-
-
-/* ---------- check-in ---------- */
 
 function CheckinSheet({ person, dateRec, onSave, onClose }) {
   const [valued, setValued] = useState([])
@@ -842,54 +1087,69 @@ const FOLLOW_LABEL = {
   done: 'Not continuing'
 }
 
-function PersonCard({ p, dates, onOpen, card = { details: true, notes: true, flags: true, contact: true } }) {
+function PersonCard({ p, dates, onOpen, store, card, view = 'card' }) {
   const s = statusOf(p.status)
   const ended = p.status === 'ended'
   const lc = lastContactOf(p, dates)
   const d = daysSince(lc)
   // Never nag about replying to someone you have let go.
   const due = !ended && d !== null && d >= 3
+  const today = todayDay()
+  const talkedToday = (p.contacts || []).some((c) => c.date === today && !/^matched$/i.test((c.note || '').trim()))
   const details = [p.age && `${p.age}`, p.job, p.location, p.met && `via ${p.met}`].filter(Boolean).join(', ')
   const reason = END_REASONS.find((r) => r.id === p.end?.reason)?.label
+  const next = plansOf(p).filter((x) => x.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0]
+  const open = rememberOf(p).filter((r) => !r.done)
+  const all = allFlags(p, () => {})
+  const g = all.filter((f) => f.kind === 'green')
+  const r = all.filter((f) => f.kind === 'red')
+  const shown = [...g.slice(0, 2), ...r.slice(0, 2)]
+  const hasPhoto = Boolean(p.photo) && card.photos
+  const name = p.name || 'Unnamed'
   return (
-    <button className="person" style={{ '--edge': s.color }} onClick={() => onOpen(p.id)}>
-      <div className="row">
-        <h3>{p.name || 'Unnamed'}</h3>
-        <span className="status">{s.label}</span>
+    // The whole card opens the profile for mouse and touch; the name is the real button for keyboard and screen readers.
+    <article className={'person' + (hasPhoto ? ' has-photo' : '') + (ended ? ' ended' : '')} style={{ '--edge': s.color, '--tint': tintFor(p.id) }} onClick={() => onOpen(p.id)}>
+      <div className="pphoto">
+        {hasPhoto ? <img src={p.photo} alt="" /> : <span className="pinit" aria-hidden="true">{initialsOf(p.name)}</span>}
+        <span className="ppill">{s.label}</span>
+        {!ended && (
+          <button
+            type="button"
+            className="pcircle"
+            aria-label={talkedToday ? `You talked to ${name} today` : `We talked today: log contact with ${name}`}
+            disabled={talkedToday}
+            onClick={(e) => { e.stopPropagation(); store.logTalked(p.id) }}
+          >
+            {talkedToday ? <Check size={22} aria-hidden="true" /> : <MessageCircle size={22} aria-hidden="true" />}
+          </button>
+        )}
       </div>
-      {card.details && <div className="meta">{details || 'No details yet'}</div>}
-      {ended && (
-        <div className="reply" style={{ color: 'var(--ink)' }}>
-          Ended {fmtDate(p.end?.date)}{reason ? `: ${reason}` : ''}
-        </div>
-      )}
-      {card.notes && rememberOf(p).filter((r) => !r.done).length > 0 && (
-        <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 14 }}>
-          {rememberOf(p).filter((r) => !r.done).slice(0, 2).map((r) => <li key={r.id}>{r.text}</li>)}
-          {rememberOf(p).filter((r) => !r.done).length > 2 && <li className="hint">+{rememberOf(p).filter((r) => !r.done).length - 2} more</li>}
-        </ul>
-      )}
-      {(() => {
-        const all = allFlags(p, () => {})
-        if (!card.flags || all.length === 0) return null
-        const g = all.filter((f) => f.kind === 'green')
-        const r = all.filter((f) => f.kind === 'red')
-        const shown = [...g.slice(0, 2), ...r.slice(0, 2)]
-        const hidden = all.length - shown.length
-        return (
-          <div className="mini">
-            {shown.map((f) => <span key={f.key} className={'tag ' + f.kind}>{f.label}</span>)}
-            {hidden > 0 && <span className="tag">+{hidden} more ({g.length} green, {r.length} red)</span>}
-          </div>
-        )
-      })()}
-      {card.contact && (
-        <div className={'reply' + (due ? ' due' : '')}>
-          {lc ? `Last contact ${agoLabel(lc)}` : 'No contact recorded'}
-          {due ? ', maybe reply?' : ''}
-        </div>
-      )}
-    </button>
+      <div className="pbody">
+        <h3><button type="button" className="person-open">{name}</button></h3>
+        {view !== 'grid' && (
+          <>
+            {card.details && <p className="pbio">{details || 'No details yet'}</p>}
+            {ended && <p className="pmeta strong">Ended {fmtDate(p.end?.date)}{reason ? `: ${reason}` : ''}</p>}
+            {card.contact && (
+              <p className={'pmeta' + (due ? ' due' : '')}>
+                {lc ? `Last contact ${agoLabel(lc)}` : 'No contact recorded'}
+                {due ? ', maybe reply?' : ''}
+              </p>
+            )}
+            {card.plan && next && <p className="pmeta">Next plan: {next.title || 'Planned date'}, {fmtDate(next.date)}</p>}
+            {card.notes && open.length > 0 && (
+              <p className="phigh">{open[0].text}{open.length > 1 ? ` (+${open.length - 1} more)` : ''}</p>
+            )}
+            {card.flags && shown.length > 0 && (
+              <div className="mini pflags">
+                {shown.map((f) => <span key={f.key} className={'tag ' + f.kind}>{f.label}</span>)}
+                {all.length > shown.length && <span className="tag">+{all.length - shown.length} more ({g.length} green, {r.length} red)</span>}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </article>
   )
 }
 
@@ -897,6 +1157,7 @@ function People({ people, dates, onOpen, store, onLogDate }) {
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('contact')
   const [q, setQ] = useState('')
+  const { home, peopleView: view, card } = store.data.settings
 
   const query = q.trim().toLowerCase()
 
@@ -932,8 +1193,16 @@ function People({ people, dates, onOpen, store, onLogDate }) {
 
   return (
     <>
-      <ReminderBanner data={store.data} onOpenPerson={onOpen} />
+      {home.hero && (
+        <section className="hero" aria-label="Welcome">
+          <div className="hero-tile" aria-hidden="true"><Heart size={46} fill="currentColor" strokeWidth={1.5} /></div>
+          <h2>Hello there</h2>
+          <p>Your people, at your pace.</p>
+        </section>
+      )}
+      {home.week && <WeekStrip data={store.data} />}
       {people.some(isActive) && <QuickLog people={people.filter(isActive)} store={store} onLogDate={onLogDate} />}
+      <ReminderBanner data={store.data} onOpenPerson={onOpen} />
       <input
         className="in"
         placeholder="Search names, jobs, details"
@@ -953,16 +1222,22 @@ function People({ people, dates, onOpen, store, onLogDate }) {
           Let go{endedTotal > 0 ? ` (${endedTotal})` : ''}
         </button>
       </div>
-      {filter !== 'ended' && (
-        <div className="sortrow">
-          Sort by
-          <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort order">
-            <option value="contact">Longest since contact</option>
-            <option value="recent">Newest match</option>
-            <option value="name">Name</option>
-          </select>
+      <div className="sortrow">
+        {filter !== 'ended' ? (
+          <label className="sortlbl">
+            Sort by
+            <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort order">
+              <option value="contact">Longest since contact</option>
+              <option value="recent">Newest match</option>
+              <option value="name">Name</option>
+            </select>
+          </label>
+        ) : <span />}
+        <div className="segment" role="group" aria-label="Card layout">
+          <button type="button" aria-pressed={view === 'grid'} aria-label="Compact grid" onClick={() => store.setSettings({ peopleView: 'grid' })}><LayoutGrid size={20} aria-hidden="true" /></button>
+          <button type="button" aria-pressed={view === 'card'} aria-label="Large cards" onClick={() => store.setSettings({ peopleView: 'card' })}><User size={20} aria-hidden="true" /></button>
         </div>
-      )}
+      </div>
 
       {list.length === 0 ? (
         <div className="empty">
@@ -984,13 +1259,17 @@ function People({ people, dates, onOpen, store, onLogDate }) {
           </p>
         </div>
       ) : (
-        list.map((p) => <PersonCard key={p.id} p={p} dates={dates} onOpen={onOpen} card={store.data.settings.card} />)
+        <div className={view === 'grid' ? 'people-grid' : 'people-list'}>
+          {list.map((p) => <PersonCard key={p.id} p={p} dates={dates} onOpen={onOpen} store={store} card={card} view={view} />)}
+        </div>
       )}
 
       {ended.length > 0 && (
         <>
           <div className="section">Let go / ended</div>
-          {ended.map((p) => <PersonCard key={p.id} p={p} dates={dates} onOpen={onOpen} card={store.data.settings.card} />)}
+          <div className={view === 'grid' ? 'people-grid' : 'people-list'}>
+            {ended.map((p) => <PersonCard key={p.id} p={p} dates={dates} onOpen={onOpen} store={store} card={card} view={view} />)}
+          </div>
         </>
       )}
 
@@ -998,9 +1277,9 @@ function People({ people, dates, onOpen, store, onLogDate }) {
         <>
           <div className="section">Archived</div>
           {archived.map((p) => (
-            <div key={p.id} className="person" style={{ '--edge': 'var(--line)' }}>
+            <div key={p.id} className="person archived-row" style={{ '--edge': 'var(--line)' }}>
               <div className="row" style={{ alignItems: 'center' }}>
-                <button style={{ textAlign: 'left', flex: 1 }} onClick={() => onOpen(p.id)}>
+                <button className="archived-open" style={{ textAlign: 'left', flex: 1 }} onClick={() => onOpen(p.id)}>
                   <h3>{p.name || 'Unnamed'}</h3>
                 </button>
                 <button className="btn ghost" onClick={() => store.updatePerson(p.id, { archived: false })}>
@@ -1569,16 +1848,7 @@ function CriteriaSummary({ criteria }) {
     })),
     ...c.dealTags.map((id) => ({ k: 'dt' + id, cls: 'red', text: `Red line: tagged ${tagLabel(id)}` })),
     ...splitWords(c.avoidWords).map((w) => ({ k: 'rw' + w, cls: 'red', text: `Red line: "${w}"` })),
-    ...splitWords(c.softAvoidWords).map((w) => ({ k: 'sw' + w, cls: 'amber', text: `Would rather not: "${w}"` })),
-    ...(c.ageMin !== null || c.ageMax !== null
-      ? [{
-          k: 'age', cls: c.ageLevel === 'redline' ? 'red' : 'amber',
-          text: `${AVOID_LEVELS[c.ageLevel].label}: age outside ${c.ageMin !== null && c.ageMax !== null ? `${c.ageMin} to ${c.ageMax}` : c.ageMin !== null ? `${c.ageMin}+` : `up to ${c.ageMax}`}`
-        }]
-      : []),
-    ...(splitPlaces(c.places).length
-      ? [{ k: 'places', cls: c.placesLevel === 'redline' ? 'red' : 'amber', text: `${AVOID_LEVELS[c.placesLevel].label}: outside ${splitPlaces(c.places).join(', ')}` }]
-      : [])
+    ...splitWords(c.softAvoidWords).map((w) => ({ k: 'sw' + w, cls: 'amber', text: `Would rather not: "${w}"` }))
   ]
   const side = (title, cls, chips) => (
     <div style={{ marginTop: 10 }}>
@@ -1763,32 +2033,6 @@ function Fit({ data, store, onOpen }) {
               </span>
             </label>
 
-            <span className="lbl" style={{ marginTop: 14 }}>Age range I am open to</span>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <label className="field" style={{ flex: 1, marginBottom: 6 }}>
-                <span>From</span>
-                <input className="in" inputMode="numeric" placeholder="25" aria-label="Youngest age" value={criteria.ageMin ?? ''}
-                  onChange={(e) => store.setCriteria({ ageMin: e.target.value.replace(/[^0-9]/g, '').slice(0, 3) })} />
-              </label>
-              <label className="field" style={{ flex: 1, marginBottom: 6 }}>
-                <span>To</span>
-                <input className="in" inputMode="numeric" placeholder="35" aria-label="Oldest age" value={criteria.ageMax ?? ''}
-                  onChange={(e) => store.setCriteria({ ageMax: e.target.value.replace(/[^0-9]/g, '').slice(0, 3) })} />
-              </label>
-            </div>
-            <LevelPick options={AVOID_PICK} value={criteria.ageLevel || 'rathernot'} onPick={(l) => store.setCriteria({ ageLevel: l })} label="How strict about age" />
-            <label className="field" style={{ marginTop: 12 }}>
-              <span>Places that work for me</span>
-              <input className="in" placeholder="Hartford, Bloomfield, West Hartford" value={criteria.places || ''}
-                onChange={(e) => store.setCriteria({ places: e.target.value })} />
-            </label>
-            <LevelPick options={AVOID_PICK} value={criteria.placesLevel || 'rathernot'} onPick={(l) => store.setCriteria({ placesLevel: l })} label="How strict about place" />
-            <p className="hint" style={{ margin: '6px 0 0' }}>
-              Someone outside your age range or places counts as a don't-want at the strength you pick. Comma separated
-              places are matched against the location on their profile. If a profile has no age or location, nothing is
-              checked and it is not held against them.
-            </p>
-
             <div className="section" style={{ marginTop: 18 }}>Describe your ideal partner</div>
             <label className="field">
               <span>What does a great partner look like for you?</span>
@@ -1925,15 +2169,18 @@ function PlanSection({ person, store, onLogDate }) {
   const [day, setDay] = useState(today)
   const [remind, setRemind] = useState(true)
   const [msg, setMsg] = useState('')
+  const draft = useDraft('plan:' + person.id, { title, place, date: day, remind }, open)
   const plans = plansOf(person).sort((a, b) => a.date.localeCompare(b.date))
   const remember = rememberOf(person).filter((r) => !r.done)
 
   const save = () => {
-    if (!day || day < today) return setMsg('Pick today or a day ahead.')
-    if (!title.trim() && !place.trim()) return setMsg('Say what you are planning, or where.')
+    if (!day || day < today) return setMsg('Pick today or a day ahead. Everything else you typed is kept.')
+    if (!title.trim() && !place.trim()) return setMsg('Say what you are planning, or where. The day and reminder choice are kept.')
     store.addPlan(person.id, { date: day, title: title.trim(), place: place.trim(), remind })
+    draft.done()
     setTitle(''); setPlace(''); setDay(today); setRemind(true); setMsg(''); setOpen(false)
   }
+  const restore = () => { const d = draft.take(); if (d) { setTitle(d.title); setPlace(d.place); setDay(d.date && d.date >= today ? d.date : today); setRemind(d.remind) } }
 
   return (
     <div>
@@ -1949,7 +2196,7 @@ function PlanSection({ person, store, onLogDate }) {
                   <br />{pl.title || 'Planned date'}{pl.place ? ` at ${pl.place}` : ''}{pl.remind ? '' : ' (no reminder)'}
                   {n >= 0 && <RememberItems items={remember} limit={3} />}
                   {n < 0 && (
-                    <button type="button" className="btn ghost" style={{ padding: '6px 10px', marginTop: 6 }} onClick={onLogDate}>It happened: log the date</button>
+                    <button type="button" className="btn ghost" style={{ marginTop: 6 }} onClick={onLogDate}>It happened: log the date</button>
                   )}
                 </span>
                 <button className="icon-btn" aria-label={`Remove plan on ${fmtDate(pl.date)}`} onClick={() => store.deletePlan(person.id, pl.id)}><X size={16} /></button>
@@ -1961,14 +2208,15 @@ function PlanSection({ person, store, onLogDate }) {
       {open ? (
         <div className="stat" style={{ marginTop: 10 }}>
           <h4>Plan a date</h4>
+          <DraftBanner draft={draft} what="plan" onRestore={restore} onDiscard={draft.discard} />
           <label className="field"><span>What</span>
-            <input className="in" maxLength={MAX_PLAN_TEXT} value={title} placeholder="Hike, dinner, coffee…" onChange={(e) => { setTitle(e.target.value); setMsg('') }} /></label>
+            <input className="in" maxLength={MAX_PLAN_TEXT} value={title} placeholder="Hike, dinner, coffee…" {...errProps('plan-err', msg)} onChange={(e) => { setTitle(e.target.value); setMsg('') }} /></label>
           <label className="field"><span>Where</span>
-            <input className="in" maxLength={MAX_PLAN_TEXT} value={place} placeholder="Sleeping Giant, that ramen place…" onChange={(e) => { setPlace(e.target.value); setMsg('') }} /></label>
+            <input className="in" maxLength={MAX_PLAN_TEXT} value={place} placeholder="Sleeping Giant, that ramen place…" {...errProps('plan-err', msg)} onChange={(e) => { setPlace(e.target.value); setMsg('') }} /></label>
           <label className="field"><span>When</span>
-            <input className="in" type="date" min={today} value={day} aria-label="Plan date" onChange={(e) => setDay(e.target.value)} /></label>
-          <label className="switch"><input type="checkbox" checked={remind} onChange={(e) => setRemind(e.target.checked)} /><span>Remind me on the Today screen</span></label>
-          {msg && <div className="warn" role="status">{msg}</div>}
+            <input className="in" type="date" min={today} value={day} aria-label="Plan date" {...errProps('plan-err', msg)} onChange={(e) => { setDay(e.target.value); setMsg('') }} /></label>
+          <label className="switch"><input type="checkbox" checked={remind} onChange={(e) => setRemind(e.target.checked)} /><span>Remind me when it is coming up</span></label>
+          <FieldError id="plan-err" msg={msg} />
           <div className="btnrow">
             <button type="button" className="btn ghost" onClick={() => { setOpen(false); setMsg('') }}>Cancel</button>
             <button type="button" className="btn primary" onClick={save}>Save plan</button>
@@ -2093,6 +2341,22 @@ function PromptSection({ person, dates, store }) {
 
 /* ---------- today ---------- */
 
+function WeekStrip({ data }) {
+  const w = useMemo(() => weekStrip(data, todayDay()), [data])
+  return (
+    <div className="week" role="list" aria-label="This week">
+      {w.days.map((d) => (
+        <div key={d.day} role="listitem" className={'wday' + (d.isToday ? ' today' : '')}
+          aria-label={`${d.name} ${d.num}${d.isToday ? ', today' : ''}${d.active ? ': you logged something' : ''}`}
+          aria-current={d.isToday ? 'date' : undefined}>
+          <span aria-hidden="true">{d.label}</span>
+          {d.active ? <Check size={22} strokeWidth={2.5} aria-hidden="true" /> : <b aria-hidden="true">{d.num}</b>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function QuickLog({ people, store, onLogDate }) {
   const [personId, setPersonId] = useState('')
   const [note, setNote] = useState('')
@@ -2108,8 +2372,13 @@ function QuickLog({ people, store, onLogDate }) {
     setNote(''); setFeeling(''); said(`Saved to ${who.name || 'their'} timeline.`)
   }
   return (
-    <details className="stat fitfold" aria-label="Quick log">
-      <summary><h4 style={{ display: 'inline', margin: 0 }}>Quick log</h4></summary>
+    <details className="actioncard" aria-label="Quick log">
+      <summary>
+        <span className="acircle" aria-hidden="true"><Sparkles size={26} /></span>
+        <span className="atext"><span className="atitle">Quick log</span><span className="asub">Record how today went in a few taps</span></span>
+        <ChevronRight className="achev" size={22} aria-hidden="true" />
+      </summary>
+      <div className="acontent">
       <label className="field" style={{ margin: '10px 0 8px' }}>
         <span>With</span>
         <select className="in" value={who.id} aria-label="Quick log person" onChange={(e) => setPersonId(e.target.value)}>
@@ -2129,6 +2398,7 @@ function QuickLog({ people, store, onLogDate }) {
       </div>
       <button type="button" className="btn ghost" style={{ width: '100%', marginTop: 8 }} onClick={saveNote}><Sparkles size={18} /> Save note</button>
       {msg && <div className="adj" role="status" style={{ marginTop: 8 }}>{msg}</div>}
+      </div>
     </details>
   )
 }
@@ -2140,7 +2410,8 @@ function ReminderBanner({ data, onOpenPerson }) {
   if (due.length === 0) return null
   return (
     <div className="stat remind" role="region" aria-label="Reminders">
-      <h4><Bell size={16} aria-hidden="true" /> Coming up</h4>
+      <span className="rbell" aria-hidden="true"><Bell size={22} /></span>
+      <h4>Coming up</h4>
       {due.map((u) => (
         <div key={u.plan.id} style={{ marginBottom: 8 }}>
           <span className="tag green">{daysLabel(u.days)}</span> <strong>{u.person.name || 'Unnamed'}</strong>: {u.plan.title || 'Planned date'}{u.plan.place ? ` at ${u.plan.place}` : ''}
@@ -2205,18 +2476,26 @@ function LockScreen({ onUnlock }) {
 
 function UndoToast({ store }) {
   const u = store.undo
+  const n = store.notice
   useEffect(() => {
     if (!u) return undefined
     const id = setTimeout(store.dismissUndo, 8000)
     return () => clearTimeout(id)
   }, [u?.key]) // eslint-disable-line react-hooks/exhaustive-deps
-  if (!u) return null
-  return (
-    <div className="toast" role="status">
-      <span>{u.label}</span>
-      <button type="button" onClick={store.undoLast}><Undo2 size={16} aria-hidden="true" /> Undo</button>
-    </div>
-  )
+  useEffect(() => {
+    if (!n || u) return undefined
+    const id = setTimeout(store.clearNotice, 3200)
+    return () => clearTimeout(id)
+  }, [n?.key, Boolean(u)]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (u) {
+    return (
+      <div className="toast" role="status">
+        <span>{u.label}</span>
+        <button type="button" onClick={store.undoLast}><Undo2 size={16} aria-hidden="true" /> Undo</button>
+      </div>
+    )
+  }
+  return n ? <div className="toast notice" role="status" aria-live="polite"><Check size={18} aria-hidden="true" /> {n.message}</div> : null
 }
 
 function downloadText(name, text, type = 'application/json') {
@@ -2246,6 +2525,8 @@ function SettingsSheet({ store, onClose, onLockNow }) {
   const moments = data.people.reduce((n, p) => n + momentsOf(p).length, 0)
   const plans = data.people.reduce((n, p) => n + plansOf(p).length, 0)
   const reflections = data.dates.filter((d) => reflectionOf(d)).length
+  const photoCount = data.people.filter((p) => p.photo).length
+  const [drafts, setDrafts] = useState(() => draftCount())
   const kb = Math.max(1, Math.round(new Blob([JSON.stringify(data)]).size / 1024))
 
   const savePin = async () => {
@@ -2307,7 +2588,9 @@ function SettingsSheet({ store, onClose, onLockNow }) {
         <ul className="why">
           <li className="good">{data.people.length} people, {data.dates.length} dates, {moments} moments, {plans} plans, {reflections} reflections</li>
           <li className="good">About {kb} KB stored on this device</li>
+          <li className="good">{photoCount} photo{photoCount === 1 ? '' : 's'} on profiles</li>
           <li className={pinSet ? 'good' : 'warn'}>App lock: {pinSet ? 'on' : 'off'}</li>
+          <li className={drafts ? 'warn' : 'good'}>Unfinished drafts: {drafts}. They stay on this device until you save or discard them, and expire after 7 days. <button type="button" className="tl-link" disabled={!drafts} onClick={() => { clearAllDrafts(); setDrafts(0); say('Drafts cleared.') }}>Clear drafts</button></li>
           <li className={st.lastBackup ? 'good' : 'warn'}>Last backup: {st.lastBackup ? fmtDate(st.lastBackup) : 'never'}</li>
         </ul>
         <p className="hint" style={{ margin: 0 }}>Clearing this site's data in your browser erases everything, so keep a backup.</p>
@@ -2365,6 +2648,15 @@ function SettingsSheet({ store, onClose, onLockNow }) {
       {cardToggle('notes', 'Remembered details on cards')}
       {cardToggle('flags', 'Green and red flags on cards')}
       {cardToggle('contact', 'Last contact on cards')}
+      {cardToggle('plan', 'Next plan on cards')}
+      {cardToggle('photos', 'Photos on cards')}
+      <p className="hint" style={{ marginTop: 4 }}>Turn photos off if others might see your screen. They are kept and still show on profiles.</p>
+
+      <div className="section">Home screen</div>
+      {[['hero', 'Greeting at the top of People'], ['week', 'This week strip']].map(([k, label]) => (
+        <label key={k} className="switch"><input type="checkbox" checked={st.home[k]} onChange={(e) => store.setSettings({ home: { [k]: e.target.checked } })} /><span>{label}</span></label>
+      ))}
+      <p className="hint" style={{ marginTop: 4 }}>The week strip only checks off days you logged something. It never counts streaks or missed days.</p>
 
       <div className="section">Profile sections</div>
       <p className="hint" style={{ marginTop: 0 }}>Hide the parts of a profile you do not use. Hiding a section only tucks it away: nothing is deleted, and it still counts in Fit.</p>
@@ -2381,7 +2673,7 @@ function SettingsSheet({ store, onClose, onLockNow }) {
 
       <div className="section">Danger zone</div>
       <button type="button" className="btn danger" style={{ width: '100%' }}
-        onClick={() => { if (confirm('Erase all people, dates, and notes from this device? You can undo for a few seconds.')) { store.eraseEverything(); onClose() } }}>
+        onClick={() => { if (confirm('Erase all people, dates, and notes from this device? You can undo for a few seconds.')) { store.eraseEverything(); clearAllDrafts(); onClose() } }}>
         <Trash2 size={18} /> Erase everything
       </button>
     </Sheet>
@@ -2604,11 +2896,22 @@ export default function App() {
       <header className="top">
         <button type="button" className="gear" aria-label="Settings" onClick={() => setSheet({ type: 'settings' })}><SettingsIcon size={22} /></button>
         <div className="brand">Date-a-Dex</div>
-        <h1>{current.label}</h1>
-        <p>{current.sub}</p>
+        {tab === 'roster' && data.settings.home.hero ? (
+          <h1 className="sr-only">{current.label}</h1>
+        ) : (
+          <>
+            <h1>{current.label}</h1>
+            <p>{current.sub}</p>
+          </>
+        )}
       </header>
+      {store.saveFailed && (
+        <div className="savefail" role="alert">
+          Your browser could not save your latest changes, most likely because its storage is full. Download a backup from Settings now, then remove some photos or old entries.
+        </div>
+      )}
 
-      <main className="scroll">
+      <main className="scroll" key={tab}>
         {tab === 'roster' && <People people={data.people} dates={data.dates} store={store} onOpen={(id) => setSheet({ type: 'person', personId: id })} onLogDate={(personId) => setSheet({ type: 'date', defaultPersonId: personId })} />}
         {tab === 'timeline' && <TimelineTab data={data} store={store} onOpenPerson={(id) => setSheet({ type: 'person', personId: id })} onOpenDate={openDate} />}
         {tab === 'dates' && <DateLog people={data.people} dates={data.dates} onEdit={(d) => setSheet({ type: 'date', date: d })} onReflect={(id) => openDate(id, true)} />}
@@ -2653,7 +2956,8 @@ export default function App() {
           store={store}
           onClose={() => setSheet(null)}
           onLogDate={() => setSheet({ type: 'date', defaultPersonId: person.id })}
-          onEditDate={(d) => setSheet({ type: 'date', date: d })}
+          onEditDate={(d, reflect) => setSheet({ type: 'date', date: d, reflect: Boolean(reflect) })}
+          onOpenFit={() => { setSheet(null); setTab('fit') }}
         />
       )}
 

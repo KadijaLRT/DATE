@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, plansOf, rememberOf, reflectionOf, TAGS } from './fit.js'
 import { normalizeSettings } from './settings.js'
+import { cleanPhoto } from './photos.js'
 
 // Tags live in fit.js so scoring and the UI share one list.
 export { TAGS }
@@ -123,6 +124,7 @@ export function migratePerson(p) {
     contacts,
     tags: Array.isArray(rest.tags) ? rest.tags : [],
     customFlags: customFlagsOf(rest),
+    photo: cleanPhoto(rest.photo),
     moments: momentsOf(rest),
     plans: plansOf(rest),
     remember: rememberOf({
@@ -149,13 +151,22 @@ export function useStore() {
   useEffect(() => { dataRef.current = data }, [data])
   const snapRef = useRef(null)
 
+  // If the browser refuses to save (storage full, or blocked), say so: silently losing changes is the worst outcome.
+  const [saveFailed, setSaveFailed] = useState(false)
   useEffect(() => {
+    let failed = false
     try {
       localStorage.setItem(KEY, JSON.stringify(data))
     } catch {
-      /* storage full or blocked; state still works for the session */
+      failed = true
     }
+    queueMicrotask(() => setSaveFailed(failed)) // reported after the effect, not inside it
   }, [data])
+
+  // A short confirmation ("Date logged"), shown in a toast that never blocks anything.
+  const [notice, setNotice] = useState(null)
+  const notify = (message) => setNotice({ message, key: uid() })
+  const clearNotice = () => setNotice(null)
 
   const addPerson = (p) => {
     const person = {
@@ -169,6 +180,7 @@ export function useStore() {
       end: null,
       tags: [],
       customFlags: [],
+      photo: '',
       moments: [],
       plans: [],
       remember: [],
@@ -225,6 +237,7 @@ export function useStore() {
       ...d,
       dates: [{ id, created: new Date().toISOString(), ...x }, ...d.dates]
     }))
+    notify('Date logged')
     return id
   }
 
@@ -238,13 +251,15 @@ export function useStore() {
       )
     }))
 
-  const addMoment = (personId, m) =>
+  const addMoment = (personId, m) => {
+    notify('Moment saved')
     setData((d) => ({
       ...d,
       people: d.people.map((p) =>
         p.id === personId ? { ...p, moments: momentsOf({ moments: [...momentsOf(p), { id: uid(), ...m }] }) } : p
       )
     }))
+  }
 
   const rawDeleteMoment = (personId, momentId) =>
     setData((d) => ({
@@ -260,11 +275,13 @@ export function useStore() {
       )
     }))
 
-  const updateDate = (id, patch) =>
+  const updateDate = (id, patch) => {
     setData((d) => ({
       ...d,
       dates: d.dates.map((x) => (x.id === id ? { ...x, ...patch } : x))
     }))
+    notify(patch.reflection ? 'Reflection saved' : 'Changes saved')
+  }
 
   const rawDeleteDate = (id) =>
     setData((d) => ({ ...d, dates: d.dates.filter((x) => x.id !== id) }))
@@ -284,6 +301,7 @@ export function useStore() {
     snapRef.current = null
     setUndo(null)
   }
+  const logTalked = (personId) => undoable('Logged: you talked today', () => addContact(personId, todayDay(), ''))
   const deletePerson = (id) => undoable('Person deleted', () => rawDeletePerson(id))
   const deleteDate = (id) => undoable('Date deleted', () => rawDeleteDate(id))
   const deleteContact = (personId, contactId) => undoable('Contact deleted', () => rawDeleteContact(personId, contactId))
@@ -296,8 +314,10 @@ export function useStore() {
   const updateMoment = (personId, momentId, patch) =>
     patchPerson(personId, (p) => ({ moments: momentsOf({ moments: momentsOf(p).map((m) => (m.id === momentId ? { ...m, ...patch } : m)) }) }))
 
-  const addPlan = (personId, plan) =>
+  const addPlan = (personId, plan) => {
     patchPerson(personId, (p) => ({ plans: plansOf({ plans: [...plansOf(p), { id: uid(), ...plan }] }) }))
+    notify('Plan saved')
+  }
   const deletePlan = (personId, planId) =>
     undoable('Plan removed', () => patchPerson(personId, (p) => ({ plans: plansOf(p).filter((x) => x.id !== planId) })))
 
@@ -308,7 +328,7 @@ export function useStore() {
   const deleteRemember = (personId, itemId) =>
     undoable('Removed', () => patchPerson(personId, (p) => ({ remember: rememberOf(p).filter((r) => r.id !== itemId) })))
 
-  const setSettings = (patch) => setData((d) => ({ ...d, settings: normalizeSettings({ ...d.settings, ...patch, card: { ...d.settings.card, ...(patch.card || {}) }, profile: { ...d.settings.profile, ...(patch.profile || {}) } }) }))
+  const setSettings = (patch) => setData((d) => ({ ...d, settings: normalizeSettings({ ...d.settings, ...patch, card: { ...d.settings.card, ...(patch.card || {}) }, profile: { ...d.settings.profile, ...(patch.profile || {}) }, home: { ...d.settings.home, ...(patch.home || {}) } }) }))
 
   const replaceAll = (next) =>
     setData({
@@ -353,6 +373,7 @@ export function useStore() {
     deletePerson,
     addDate,
     addContact,
+    logTalked,
     deleteContact,
     addMoment,
     deleteMoment,
@@ -367,6 +388,10 @@ export function useStore() {
     undo,
     undoLast,
     dismissUndo,
+    saveFailed,
+    notice,
+    clearNotice,
+    notify,
     updateDate,
     deleteDate,
     replaceAll,

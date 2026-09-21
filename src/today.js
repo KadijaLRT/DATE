@@ -1,5 +1,5 @@
 // Builds the Today screen from what is already stored. Pure: pass in "today" (YYYY-MM-DD) so it can be tested.
-import { plansOf, rememberOf, reflectionOf } from './fit.js'
+import { plansOf, rememberOf, reflectionOf, momentsOf } from './fit.js'
 import { buildTimeline } from './timeline.js'
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -51,4 +51,37 @@ export function buildToday(data, { today, reminderDays = 2 } = {}) {
     .slice(0, 4)
 
   return { upcoming, overdue, reflections: reflections.slice(0, 5), recent, updated, quickPeople: live, empty: live.length === 0 }
+}
+
+// The current week, Sunday to Saturday, with a check on each day you logged anything (contact, a date, or a moment).
+// Deliberately no streak count: a gap is not a failure.
+const pad = (n) => String(n).padStart(2, '0')
+const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+export const WEEKDAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
+export const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+export function activityDays(data) {
+  const days = new Set()
+  const add = (d) => { if (typeof d === 'string' && DAY.test(d)) days.add(d) }
+  for (const p of Array.isArray(data?.people) ? data.people : []) {
+    if (!p || typeof p !== 'object') continue
+    for (const c of Array.isArray(p.contacts) ? p.contacts : []) if (c && !/^matched$/i.test(String(c.note || '').trim())) add(c.date)
+    for (const m of momentsOf(p)) add(m.date)
+  }
+  for (const d of Array.isArray(data?.dates) ? data.dates : []) if (d && typeof d === 'object') add(d.date)
+  return days
+}
+
+export function weekStrip(data, today) {
+  if (!DAY.test(today || '')) return { days: [], count: 0 }
+  const [y, m, d] = today.split('-').map(Number)
+  const start = new Date(y, m - 1, d)
+  start.setDate(start.getDate() - start.getDay())
+  const active = activityDays(data)
+  const days = WEEKDAYS.map((label, i) => {
+    const dt = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)
+    const day = fmt(dt)
+    return { day, label, name: WEEKDAY_NAMES[i], num: dt.getDate(), active: active.has(day), isToday: day === today, future: day > today }
+  })
+  return { days, count: days.filter((x) => x.active).length }
 }

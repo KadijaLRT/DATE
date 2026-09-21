@@ -127,11 +127,9 @@ Old saves are upgraded automatically: the earlier "Deal-breaker" level becomes a
 | Contact history | Up to 4 points, from how recently and how often you logged contact (very active +4, gone quiet -4). It counts contact in either direction |
 | Moments you add | Text is searched like notes; feelings move the score up to 4 points either way |
 | Reflections, plans, and remembered details | Their text is searched; quick reflection answers move the score up to 4 points either way |
-| Age and location | Checked against the age range and places you set, as a don't-want at the strength you choose |
+| Age and location | Shown on the profile only. There is no age range or place setting, so neither is scored or held against anyone. Your own words can still match the location text |
 
-The follow-up, contact, feeling, and reflection adjustments add up to at most 10 points either way, and each one is shown on the card with its number. Missing data is never held against someone: no age, no location, no logged contact, or no follow-up simply means no check. Not used: the name and when you added the profile. Ended people are left out of the Fit tab, though their dates still teach it.
-
-Set the age range and places under "What I do not want". Each can be a Red line (forces Consider letting go) or Would rather not (lowers the score by 12, and flags it). Places are comma separated and matched as whole words against the location on the profile.
+The follow-up, contact, feeling, and reflection adjustments add up to at most 10 points either way, and each one is shown on the card with its number. Missing data is never held against someone: no logged contact or no follow-up simply means no check. Not used: the name and when you added the profile. Ended people are left out of the Fit tab, though their dates still teach it.
 
 ## Quick log, plans, and reminders
 
@@ -233,3 +231,15 @@ What happens to someone who has ended:
 **Archive** is separate: it just hides someone you may come back to, and does not record an outcome.
 
 Data saved before this version loads unchanged. A stage that no longer exists, or none at all, becomes Texting.
+
+## The look, photos, and drafts
+
+**People screen.** A soft journal look: a greeting, a this-week strip, a Quick log card, and large photo-forward cards with a black stage pill, a white "we talked today" circle, and a cream name card. A switch in the sort row toggles large cards or a compact two-column grid, and your choice is remembered. Turn the greeting and week strip off in Settings, under Home screen. The week strip only checks off days you logged something; it never counts streaks or missed days.
+
+**Photos (optional).** Add one from a profile with the camera button. It is shrunk on your device to a small JPEG and stored with your other data; nothing is uploaded. Turn "Photos on cards" off in Settings if others might see your screen (photos are kept and still show on profiles). If the browser's storage fills up, an alert appears instead of failing silently.
+
+**Profiles.** An at-a-glance summary (next plan, last interaction, worth remembering), quick actions, and a sticky section bar that jumps to About, Plans, Reflections, Fit, and Timeline. Sections are collapsed except About. The Fit section shows the verdict, never a raw score.
+
+**Forms.** The date form is grouped (The basics, My experience, Follow-up) with a Save button pinned to the bottom. Errors say what to fix and confirm nothing was lost, and are tied to their field for screen readers. Unfinished date, moment, and plan forms are saved on this device and offered back when you return (never restored without asking). Drafts expire after 7 days and can be cleared in Settings.
+
+**Accessibility.** Dialogs move focus in, keep Tab inside, close on Escape, and return focus to where you were. Muted text was darkened to meet 4.5:1 contrast, interactive targets are at least 44px, focus rings are always visible, and all motion switches off when your device asks for reduced motion.
