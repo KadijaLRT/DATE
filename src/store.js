@@ -125,8 +125,15 @@ export function migratePerson(p) {
     customFlags: customFlagsOf(rest),
     moments: momentsOf(rest),
     plans: plansOf(rest),
-    remember: rememberOf(rest),
-    notes: Array.isArray(rest.notes) ? rest.notes : [],
+    remember: rememberOf({
+      remember: [
+        ...(Array.isArray(rest.notes) ? rest.notes : [])
+          .filter((n) => typeof n === 'string' && n.trim())
+          .map((n, i) => ({ id: `note-${i}`, kind: 'note', text: n, done: false })),
+        ...rememberOf(rest)
+      ]
+    }),
+    notes: [], // legacy field: anything saved here is folded into Remember for next time (kind Note) below
     // end = { reason, note, date } only while status is 'ended'; cleared otherwise so stale reasons never linger
     end: status === 'ended' ? end : null
   }
@@ -301,7 +308,7 @@ export function useStore() {
   const deleteRemember = (personId, itemId) =>
     undoable('Removed', () => patchPerson(personId, (p) => ({ remember: rememberOf(p).filter((r) => r.id !== itemId) })))
 
-  const setSettings = (patch) => setData((d) => ({ ...d, settings: normalizeSettings({ ...d.settings, ...patch, card: { ...d.settings.card, ...(patch.card || {}) } }) }))
+  const setSettings = (patch) => setData((d) => ({ ...d, settings: normalizeSettings({ ...d.settings, ...patch, card: { ...d.settings.card, ...(patch.card || {}) }, profile: { ...d.settings.profile, ...(patch.profile || {}) } }) }))
 
   const replaceAll = (next) =>
     setData({

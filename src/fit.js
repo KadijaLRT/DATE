@@ -140,7 +140,8 @@ export const REMEMBER_KINDS = [
   { id: 'place', label: 'Place to try' },
   { id: 'interest', label: 'Interest' },
   { id: 'topic', label: 'Topic to discuss' },
-  { id: 'idea', label: 'Date idea' }
+  { id: 'idea', label: 'Date idea' },
+  { id: 'note', label: 'Note' }
 ]
 export const MAX_PLANS = 50
 export const MAX_REMEMBER = 100
@@ -175,7 +176,8 @@ export function rememberOf(person) {
     let id = typeof r.id === 'string' && r.id ? r.id : `r-${i}`
     while (seen.has(id)) id += '_'
     seen.add(id)
-    out.push({ id, kind: REMEMBER_IDS.has(r.kind) ? r.kind : 'idea', text, done: r.done === true })
+    const promptId = typeof r.promptId === 'string' && r.promptId ? r.promptId.slice(0, 40) : ''
+    out.push({ id, kind: REMEMBER_IDS.has(r.kind) ? r.kind : 'idea', text, done: r.done === true, ...(promptId ? { promptId } : {}) })
   })
   return out.slice(0, MAX_REMEMBER)
 }
@@ -375,7 +377,7 @@ function evidenceSegments(person, dates) {
   realContacts(person).filter((c) => !isSystemContact(c)).forEach((c) => push('a contact note', c.note))
   momentsOf(person).forEach((m) => push('a moment', m.text))
   plansOf(person).forEach((x) => { push('a plan', x.title); push('a plan', x.place) })
-  rememberOf(person).forEach((x) => push('a remembered detail', x.text))
+  rememberOf(person).forEach((x) => push(x.kind === 'note' ? 'a note' : 'a remembered detail', x.text))
   dates
     .filter((d) => d.personId === person.id)
     .forEach((d) => {
@@ -782,12 +784,12 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
     confidence,
     dates: mine.length,
     reflections: mine.filter((d) => reflectionOf(d)).length,
-    notes: (person.notes || []).length,
+    notes: (person.notes || []).length + rememberOf(person).filter((x) => x.kind === 'note').length,
     contacts: touch.length,
     moments: momentsOf(person).length,
     plans: plansOf(person).length,
     flags: (person.tags || []).length + custom.length,
-    remembered: rememberOf(person).length
+    remembered: rememberOf(person).filter((x) => x.kind !== 'note').length
   }
 
   return {

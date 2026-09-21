@@ -11,7 +11,7 @@
 //  - hard cap on how far a weight can move
 //  - every change is reported with its numbers so it can be checked
 
-import { TRAITS } from './fit.js'
+import { TRAITS, rememberOf } from './fit.js'
 
 export const MIN_PER_GROUP = 2 // need at least this many dates with AND without a trait
 export const MAX_SHIFT = 1.5 // a learned weight can move at most this far from stated
@@ -40,7 +40,7 @@ function hasUnnegated(text, phrase) {
 
 // Everything known about a person that is NOT the rating being predicted.
 function personText(person) {
-  return norm([...(person.notes || []), person.met, person.job].filter(Boolean).join(' . '))
+  return norm([...(person.notes || []), ...rememberOf(person).map((r) => r.text), person.met, person.job].filter(Boolean).join(' . '))
 }
 function dateText(d) {
   return norm([d.activity, ...(d.impressions || [])].filter(Boolean).join(' . '))

@@ -1,5 +1,5 @@
 // Patterns in your own records. Descriptive only: it says what your entries show, never what to do.
-import { momentsOf, reflectionOf, reflectionScore, REFLECTION_QUESTIONS, FEELINGS } from './fit.js'
+import { momentsOf, rememberOf, reflectionOf, reflectionScore, REFLECTION_QUESTIONS, FEELINGS } from './fit.js'
 
 export const MIN_SAMPLE = 3
 const FEEL_VALUE = Object.fromEntries(FEELINGS.map((f) => [f.id, f.value]))
@@ -24,6 +24,7 @@ export function themes(people, dates, { min = 3, limit = 6 } = {}) {
   for (const p of Array.isArray(people) ? people : []) {
     if (!p) continue
     ;(p.notes || []).forEach((n) => texts.push(n))
+    rememberOf(p).forEach((r) => texts.push(r.text))
     momentsOf(p).forEach((m) => texts.push(m.text))
   }
   for (const d of Array.isArray(dates) ? dates : []) {

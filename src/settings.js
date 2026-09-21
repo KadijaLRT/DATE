@@ -2,6 +2,8 @@
 export const DEFAULT_SETTINGS = {
   // Which lines appear on each card in the People list.
   card: { details: true, notes: true, flags: true, contact: true },
+  // Which sections appear on a profile. Hidden sections keep their data and still count in Fit.
+  profile: { flags: true, plans: true, remember: true, prompts: true, timeline: true },
   // How many days before a plan the Today screen starts reminding you (0 = only on the day).
   reminderDays: 2,
   // Lock again after the app has been in the background this long. 0 = every time you leave it.
@@ -16,10 +18,12 @@ export const LOCK_CHOICES = [
 ]
 
 export function normalizeSettings(s) {
-  const base = { ...DEFAULT_SETTINGS, card: { ...DEFAULT_SETTINGS.card } }
+  const base = { ...DEFAULT_SETTINGS, card: { ...DEFAULT_SETTINGS.card }, profile: { ...DEFAULT_SETTINGS.profile } }
   if (!s || typeof s !== 'object') return base
   const card = s.card && typeof s.card === 'object' ? s.card : {}
   for (const k of Object.keys(base.card)) if (typeof card[k] === 'boolean') base.card[k] = card[k]
+  const profile = s.profile && typeof s.profile === 'object' ? s.profile : {}
+  for (const k of Object.keys(base.profile)) if (typeof profile[k] === 'boolean') base.profile[k] = profile[k]
   const rd = Number(s.reminderDays)
   if (Number.isInteger(rd) && rd >= 0 && rd <= 7) base.reminderDays = rd
   const al = Number(s.autoLockSeconds)

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Users, CalendarHeart, BarChart3, Plus, X, Mic, Square,
   Star, Trash2, Archive, ArchiveRestore, Download, Upload, Scale,
-  MessageCircle, Sparkles, Heart, Flag, History, Sun, Settings as SettingsIcon, Lock, Undo2, Bell, CalendarClock
+  MessageCircle, Sparkles, Heart, Flag, History, Settings as SettingsIcon, Lock, Undo2, Bell, CalendarClock
 } from 'lucide-react'
 import {
   useStore, uid, STATUSES, ACTIVE_STATUSES, END_REASONS, isActive, TAGS, agoLabel, daysSince, fmtDate, lastContactOf, todayDay
@@ -13,6 +13,7 @@ import { buildToday, daysBetween } from './today.js'
 import { activityAverages, themes, reflectionTrends, emotionSeries } from './patterns.js'
 import { LOCK_CHOICES } from './settings.js'
 import { hasPin, setPin, verifyPin, clearPin, waitLeft, recordFail, resetFails, PIN_RE } from './lock.js'
+import { PROMPT_CATEGORIES, candidates as promptCandidates, usedPromptIds } from './prompts.js'
 import { encryptBackup, decryptBackup, isEncryptedBackup, MIN_PASSPHRASE } from './vault.js'
 import { plansOf, rememberOf, reflectionOf, REMEMBER_KINDS, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS, MAX_PLAN_TEXT, MAX_REMEMBER_TEXT, MAX_REFLECTION_NOTE, MAX_REFLECTION_JOURNAL, momentsOf, FEELINGS, MOMENT_TYPES, MAX_MOMENT_TEXT, customFlagsOf, MAX_CUSTOM_FLAGS, MAX_FLAG_LENGTH, TRAITS, WANT_LEVELS, AVOID_LEVELS, VERDICT, SOFT_PENALTY, evaluate, hasCriteria, normalizeCriteria, splitWords, splitPlaces, wordHits } from './fit.js'
 import { buildModel, adjustedWeight, MIN_FEEDBACK } from './learn.js'
@@ -543,17 +544,11 @@ function StatusPicker({ person, store }) {
 }
 
 function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate }) {
-  const [note, setNote] = useState('')
   const [adding, setAdding] = useState(false)
   const [editMoment, setEditMoment] = useState(null)
+  const show = store.data.settings.profile
   const set = (patch) => store.updatePerson(person.id, patch)
   const mine = dates.filter((d) => d.personId === person.id)
-
-  const addNote = () => {
-    if (!note.trim()) return
-    set({ notes: [...person.notes, note.trim()] })
-    setNote('')
-  }
 
   const remove = () => {
     if (confirm(`Delete ${person.name} and all their date records? This cannot be undone.`)) {
@@ -589,41 +584,30 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate }) {
         <input className="in" value={person.met} onChange={(e) => set({ met: e.target.value })} />
       </label>
 
-      <div className="section">Green and red flags</div>
-      <FlagEditor person={person} set={set} />
+      {show.flags && (
+        <>
+          <div className="section">Green and red flags</div>
+          <FlagEditor person={person} set={set} />
+        </>
+      )}
 
-      <div className="section">Things to remember</div>
-      <ul className="notes">
-        {person.notes.map((n, i) => (
-          <li key={i}>
-            <span>{n}</span>
-            <button
-              className="icon-btn"
-              aria-label="Remove note"
-              onClick={() => set({ notes: person.notes.filter((_, j) => j !== i) })}
-            >
-              <X size={16} />
-            </button>
-          </li>
-        ))}
-      </ul>
-      <div className="addnote">
-        <input
-          className="in"
-          placeholder="Favorite food, pet's name, a story…"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addNote()}
-        />
-        <button className="btn ghost" onClick={addNote} aria-label="Add note"><Plus size={18} /></button>
-      </div>
+      {show.plans && (
+        <>
+          <div className="section">Plan a date</div>
+          <PlanSection person={person} store={store} onLogDate={onLogDate} />
+        </>
+      )}
 
-      <div className="section">Plan a date</div>
-      <PlanSection person={person} store={store} onLogDate={onLogDate} />
+      {show.remember && (
+        <>
+          <div className="section">Remember for next time</div>
+          <RememberSection person={person} store={store} />
+        </>
+      )}
+      {show.prompts && <PromptSection person={person} dates={dates} store={store} />}
 
-      <div className="section">Remember for next time</div>
-      <RememberSection person={person} store={store} />
-
+      {show.timeline && (
+        <>
       <div className="section">Timeline</div>
       <ContactLog person={person} dates={dates} store={store} />
       {adding || editMoment ? (
@@ -655,6 +639,8 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate }) {
           }}
         />
       </div>
+        </>
+      )}
 
       <div className="btnrow" style={{ marginTop: 12 }}>
         <button className="btn rose" onClick={onLogDate}>
@@ -877,10 +863,10 @@ function PersonCard({ p, dates, onOpen, card = { details: true, notes: true, fla
           Ended {fmtDate(p.end?.date)}{reason ? `: ${reason}` : ''}
         </div>
       )}
-      {card.notes && p.notes.length > 0 && (
+      {card.notes && rememberOf(p).filter((r) => !r.done).length > 0 && (
         <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 14 }}>
-          {p.notes.slice(0, 2).map((n, i) => <li key={i}>{n}</li>)}
-          {p.notes.length > 2 && <li className="hint">+{p.notes.length - 2} more</li>}
+          {rememberOf(p).filter((r) => !r.done).slice(0, 2).map((r) => <li key={r.id}>{r.text}</li>)}
+          {rememberOf(p).filter((r) => !r.done).length > 2 && <li className="hint">+{rememberOf(p).filter((r) => !r.done).length - 2} more</li>}
         </ul>
       )}
       {(() => {
@@ -907,7 +893,7 @@ function PersonCard({ p, dates, onOpen, card = { details: true, notes: true, fla
   )
 }
 
-function People({ people, dates, onOpen, store }) {
+function People({ people, dates, onOpen, store, onLogDate }) {
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('contact')
   const [q, setQ] = useState('')
@@ -916,7 +902,7 @@ function People({ people, dates, onOpen, store }) {
 
   const { list, ended, archived, endedTotal } = useMemo(() => {
     const matches = (p) =>
-      !query || [p.name, p.job, p.met, p.location, ...(p.notes || [])].join(' ').toLowerCase().includes(query)
+      !query || [p.name, p.job, p.met, p.location, ...rememberOf(p).map((r) => r.text)].join(' ').toLowerCase().includes(query)
 
     let active = people.filter((p) => isActive(p) && matches(p))
     if (sort === 'contact') {
@@ -946,9 +932,11 @@ function People({ people, dates, onOpen, store }) {
 
   return (
     <>
+      <ReminderBanner data={store.data} onOpenPerson={onOpen} />
+      {people.some(isActive) && <QuickLog people={people.filter(isActive)} store={store} onLogDate={onLogDate} />}
       <input
         className="in"
-        placeholder="Search names, jobs, notes"
+        placeholder="Search names, jobs, details"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         aria-label="Search people"
@@ -1027,7 +1015,7 @@ function People({ people, dates, onOpen, store }) {
   )
 }
 
-function DateLog({ people, dates, onEdit }) {
+function DateLog({ people, dates, onEdit, onReflect }) {
   const sorted = [...dates].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
   const nameOf = (id) => people.find((p) => p.id === id)?.name || 'Deleted profile'
 
@@ -1041,6 +1029,8 @@ function DateLog({ people, dates, onEdit }) {
   }
 
   return (
+    <>
+    <UnfinishedReflections people={people} dates={dates} onReflect={onReflect} />
     <div className="timeline">
       {sorted.map((d) => (
         <button key={d.id} className="tl" onClick={() => onEdit(d)}>
@@ -1057,6 +1047,7 @@ function DateLog({ people, dates, onEdit }) {
         </button>
       ))}
     </div>
+    </>
   )
 }
 
@@ -1235,7 +1226,7 @@ function FeedbackRow({ verdict, current, onAnswer, disabled }) {
 
 function LearnedPanel({ data, model, store, learning }) {
   const { learned, gaps, feedback, threshold } = model
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const need = Math.max(0, 4 - learned.ratedCount)
   const shown = gaps.filter((g) => g.kind !== 'confirmed')
   const confirmed = gaps.filter((g) => g.kind === 'confirmed')
@@ -1676,9 +1667,12 @@ function Fit({ data, store, onOpen }) {
 
   return (
     <>
-      <div className="stat">
-        <div className="row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h4 style={{ margin: 0 }}>What I am looking for</h4>
+      <details className="stat fitfold">
+        <summary>
+          <h4 style={{ display: 'inline', margin: 0 }}>What I am looking for</h4>
+          <span className="hint"> {ready ? '' : 'Nothing set yet.'}</span>
+        </summary>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
           <button className="btn ghost" style={{ padding: '8px 12px' }} onClick={() => setEditing(!editing)}>
             {editing ? 'Done' : 'Edit'}
           </button>
@@ -1837,20 +1831,6 @@ function Fit({ data, store, onOpen }) {
             {!ready && <p className="hint" style={{ margin: '10px 0 0' }}>Tap Edit to say what you want and what you do not.</p>}
           </div>
         )}
-      </div>
-
-      <details className="stat" style={{ cursor: 'pointer' }}>
-        <summary style={{ fontWeight: 600 }}>What Fit reads from each profile</summary>
-        <ul className="why" style={{ marginTop: 10 }}>
-          <li className="good">Notes, how you met, job, location, and contact log notes: matched against your wants, don't-wants, and keywords.</li>
-          <li className="good">Green and red flags, including ones you typed: green raises the score, red lowers it.</li>
-          <li className="good">Dates: rating, activity, and impressions.</li>
-          <li className="good">Follow-up from the latest date: up to 6 points either way (next date planned is best, not continuing is worst).</li>
-          <li className="good">Contact history: how recent and how often, up to 4 points either way. It counts contact you logged in either direction.</li>
-          <li className="good">Age and location against the age range and places you set.</li>
-          <li className="unknown">Not used: the name and when you added them. Ended people are left out of this tab, though their dates still teach it.</li>
-        </ul>
-        <p className="hint" style={{ margin: 0 }}>Anything missing is left out, never counted against someone.</p>
       </details>
 
       <LearnedPanel data={data} model={model} store={store} learning={learning} />
@@ -1874,6 +1854,8 @@ function Fit({ data, store, onOpen }) {
               <div className="meta" style={{ color: 'var(--stone)', fontSize: 13, marginTop: 2 }}>
                 Fit {r.score} of 100 · {r.confidence} confidence · {r.dateCount} date{r.dateCount === 1 ? '' : 's'} logged
               </div>
+              <details className="fold">
+              <summary>Why this call</summary>
               <FlagList flags={r.flags} />
               {r.penalty > 0 && (
                 <p className="hint" style={{ margin: '4px 0 0' }}>
@@ -1907,6 +1889,7 @@ function Fit({ data, store, onOpen }) {
               <button className="btn ghost" style={{ padding: '8px 12px', marginTop: 8 }} onClick={() => onOpen(p.id)}>
                 Open profile
               </button>
+              </details>
             </div>
           )
         })
@@ -1927,7 +1910,7 @@ const daysLabel = (n) => (n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n > 1 ? `In
 function RememberItems({ items, limit = 4 }) {
   if (!items.length) return null
   return (
-    <ul className="remember-inline" aria-label="Remember for next time">
+    <ul className="remember-inline" aria-label="Saved for this plan">
       {items.slice(0, limit).map((r) => <li key={r.id}><strong>{REMEMBER_KINDS.find((k) => k.id === r.kind)?.label}:</strong> {r.text}</li>)}
       {items.length > limit && <li className="hint">+{items.length - limit} more on their profile</li>}
     </ul>
@@ -2031,7 +2014,7 @@ function RememberSection({ person, store }) {
         ))}
       </div>
       <div className="row" style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <input className="in" style={{ flex: 1 }} maxLength={MAX_REMEMBER_TEXT} value={text} aria-label="Remember this" placeholder="Oat milk latte, wants to try the new sushi place…"
+        <input className="in" style={{ flex: 1 }} maxLength={MAX_REMEMBER_TEXT} value={text} aria-label="Remember this" placeholder="Oat milk latte, pet's name, a story…"
           onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <button type="button" className="btn ghost" onClick={add} aria-label="Add reminder"><Plus size={18} /></button>
       </div>
@@ -2067,6 +2050,47 @@ function ReflectionForm({ value, onChange }) {
   )
 }
 
+// One suggested question at a time, collapsed until opened. Saving it puts it in Remember for next time.
+function PromptSection({ person, dates, store }) {
+  const [skip, setSkip] = useState(0)
+  const [category, setCategory] = useState('all')
+  const list = promptCandidates(person, dates, { category })
+  const covered = usedPromptIds(person).size
+  const pick = list.length ? list[skip % list.length] : null
+  const save = (done) => {
+    if (!pick) return
+    store.addRemember(person.id, { kind: 'topic', text: pick.text, done, promptId: pick.id })
+    if (done) store.addMoment(person.id, { date: todayDay(), type: 'conversation', text: `Talked about: ${pick.text}`, feeling: null })
+    setSkip(0)
+  }
+  return (
+    <details className="fold" aria-label="Conversation prompts">
+      <summary>Conversation prompts{covered ? ` (${covered} used)` : ''}</summary>
+      <label className="field" style={{ margin: '4px 0 8px' }}>
+        <span>Theme</span>
+        <select className="in" value={category} aria-label="Prompt theme" onChange={(e) => { setCategory(e.target.value); setSkip(0) }}>
+          <option value="all">Any</option>
+          {PROMPT_CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+      </label>
+      {pick ? (
+        <div className="stat" style={{ margin: '0 0 8px' }}>
+          <span className="tag">{PROMPT_CATEGORIES.find((c) => c.id === pick.category)?.label}</span>
+          <p style={{ margin: '8px 0', fontSize: 16, lineHeight: 1.4 }} aria-live="polite">{pick.text}</p>
+          <div className="btnrow" style={{ marginTop: 0 }}>
+            <button type="button" className="btn ghost" onClick={() => setSkip(skip + 1)}>Another</button>
+            <button type="button" className="btn ghost" onClick={() => save(false)}>Save for next time</button>
+          </div>
+          <button type="button" className="btn ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => save(true)}>We talked about it</button>
+        </div>
+      ) : (
+        <p className="hint" style={{ margin: '0 0 8px' }}>{covered ? 'You have used every prompt in this theme with them.' : 'No prompts in this theme.'}</p>
+      )}
+      <p className="hint" style={{ margin: 0 }}>Just questions to spark a conversation. Light ones come first while you are getting to know someone.</p>
+    </details>
+  )
+}
+
 /* ---------- today ---------- */
 
 function QuickLog({ people, store, onLogDate }) {
@@ -2084,9 +2108,9 @@ function QuickLog({ people, store, onLogDate }) {
     setNote(''); setFeeling(''); said(`Saved to ${who.name || 'their'} timeline.`)
   }
   return (
-    <div className="stat" aria-label="Quick log">
-      <h4>Quick log</h4>
-      <label className="field" style={{ marginBottom: 8 }}>
+    <details className="stat fitfold" aria-label="Quick log">
+      <summary><h4 style={{ display: 'inline', margin: 0 }}>Quick log</h4></summary>
+      <label className="field" style={{ margin: '10px 0 8px' }}>
         <span>With</span>
         <select className="in" value={who.id} aria-label="Quick log person" onChange={(e) => setPersonId(e.target.value)}>
           {people.map((p) => <option key={p.id} value={p.id}>{p.name || 'Unnamed'}</option>)}
@@ -2105,85 +2129,44 @@ function QuickLog({ people, store, onLogDate }) {
       </div>
       <button type="button" className="btn ghost" style={{ width: '100%', marginTop: 8 }} onClick={saveNote}><Sparkles size={18} /> Save note</button>
       {msg && <div className="adj" role="status" style={{ marginTop: 8 }}>{msg}</div>}
+    </details>
+  )
+}
+
+// A slim banner that only exists when a plan with a reminder is due. Nothing else from the old Today screen survives.
+function ReminderBanner({ data, onOpenPerson }) {
+  const t = useMemo(() => buildToday(data, { today: todayDay(), reminderDays: data.settings.reminderDays }), [data])
+  const due = t.upcoming.filter((u) => u.due)
+  if (due.length === 0) return null
+  return (
+    <div className="stat remind" role="region" aria-label="Reminders">
+      <h4><Bell size={16} aria-hidden="true" /> Coming up</h4>
+      {due.map((u) => (
+        <div key={u.plan.id} style={{ marginBottom: 8 }}>
+          <span className="tag green">{daysLabel(u.days)}</span> <strong>{u.person.name || 'Unnamed'}</strong>: {u.plan.title || 'Planned date'}{u.plan.place ? ` at ${u.plan.place}` : ''}
+          <RememberItems items={u.remember} />
+          <button type="button" className="tl-link" onClick={() => onOpenPerson(u.person.id)}>Open profile</button>
+        </div>
+      ))}
     </div>
   )
 }
 
-function TodayTab({ data, store, onOpenPerson, onOpenDate, onLogDate }) {
-  const today = todayDay()
-  const t = useMemo(() => buildToday(data, { today, reminderDays: data.settings.reminderDays }), [data, today])
-  if (t.empty) {
-    return <div className="empty"><h3>Welcome to Date-a-Dex</h3><p>Add your first match from the People tab. This screen then fills in with plans, reminders, and what is worth reflecting on.</p></div>
-  }
-  const due = t.upcoming.filter((u) => u.due)
-  const later = t.upcoming.filter((u) => !u.due)
-  const planLine = (u) => (
-    <>
-      <strong>{u.person.name || 'Unnamed'}</strong>: {u.plan.title || 'Planned date'}{u.plan.place ? ` at ${u.plan.place}` : ''}
-    </>
-  )
+// Dates from the last three weeks that have no reflection yet. Collapsed so the Dates tab stays calm.
+function UnfinishedReflections({ people, dates, onReflect }) {
+  const list = useMemo(() => buildToday({ people, dates }, { today: todayDay() }).reflections, [people, dates])
+  if (list.length === 0) return null
   return (
-    <>
-      {due.length > 0 && (
-        <div className="stat remind" role="region" aria-label="Reminders">
-          <h4><Bell size={16} aria-hidden="true" /> Coming up</h4>
-          {due.map((u) => (
-            <div key={u.plan.id} style={{ marginBottom: 10 }}>
-              <span className="tag green">{daysLabel(u.days)}</span> {planLine(u)}
-              <RememberItems items={u.remember} />
-              <button type="button" className="tl-link" onClick={() => onOpenPerson(u.person.id)}>Open profile</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <QuickLog people={t.quickPeople} store={store} onLogDate={onLogDate} />
-
-      {(later.length > 0 || t.overdue.length > 0) && (
-        <div className="stat">
-          <h4>Plans</h4>
-          {later.map((u) => (
-            <p key={u.plan.id} style={{ margin: '0 0 8px' }}><span className="tag">{daysLabel(u.days)}</span> {planLine(u)}</p>
-          ))}
-          {t.overdue.map((u) => (
-            <p key={u.plan.id} style={{ margin: '0 0 8px' }}>
-              <span className="tag amber">{daysLabel(u.days)}</span> {planLine(u)}{' '}
-              <button type="button" className="tl-link" onClick={() => onLogDate(u.person.id)}>It happened: log the date</button>{' · '}
-              <button type="button" className="tl-link" onClick={() => store.deletePlan(u.person.id, u.plan.id)}>Remove</button>
-            </p>
-          ))}
-        </div>
-      )}
-
-      {t.reflections.length > 0 && (
-        <div className="stat">
-          <h4>Unfinished reflections</h4>
-          <p className="hint" style={{ marginTop: 0 }}>Dates from the last three weeks you have not reflected on. Optional, and only for you.</p>
-          {t.reflections.map((x) => (
-            <p key={x.date.id} style={{ margin: '0 0 8px' }}>
-              <strong>{x.person.name || 'Unnamed'}</strong>, {fmtDate(x.date.date)}{x.date.activity ? `, ${x.date.activity}` : ''}{' '}
-              <button type="button" className="tl-link" onClick={() => onOpenDate(x.date.id, true)}>Reflect</button>
-            </p>
-          ))}
-        </div>
-      )}
-
-      <div className="section">Recent interactions</div>
-      <TimelineList entries={t.recent} showPerson onOpenPerson={onOpenPerson} onOpenDate={(id) => onOpenDate(id)} onDelete={() => {}} empty="Nothing logged yet. Use Quick log above." />
-
-      {t.updated.length > 0 && (
-        <>
-          <div className="section">Recently updated</div>
-          <div className="mini" style={{ marginBottom: 16 }}>
-            {t.updated.map((u) => (
-              <button key={u.person.id} type="button" className="tag chipbtn" onClick={() => onOpenPerson(u.person.id)}>
-                {u.person.name || 'Unnamed'}, {u.ago === 0 ? 'today' : u.ago === 1 ? 'yesterday' : `${u.ago} days ago`}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </>
+    <details className="stat fitfold" aria-label="Unfinished reflections">
+      <summary><h4 style={{ display: 'inline', margin: 0 }}>Unfinished reflections</h4><span className="hint"> {list.length}</span></summary>
+      <p className="hint" style={{ margin: '8px 0' }}>Dates from the last three weeks you have not reflected on. Optional, and only for you.</p>
+      {list.map((x) => (
+        <p key={x.date.id} style={{ margin: '0 0 8px' }}>
+          <strong>{x.person.name || 'Unnamed'}</strong>, {fmtDate(x.date.date)}{x.date.activity ? `, ${x.date.activity}` : ''}{' '}
+          <button type="button" className="tl-link" onClick={() => onReflect(x.date.id)}>Reflect</button>
+        </p>
+      ))}
+    </details>
   )
 }
 
@@ -2378,10 +2361,16 @@ function SettingsSheet({ store, onClose, onLockNow }) {
 
       <div className="section">People cards</div>
       <p className="hint" style={{ marginTop: 0 }}>Choose what shows on each card in the People list. Profiles always show everything.</p>
-      {cardToggle('details', 'Details (age, job, location, how you met)')}
-      {cardToggle('notes', 'Notes')}
-      {cardToggle('flags', 'Green and red flags')}
-      {cardToggle('contact', 'Last contact')}
+      {cardToggle('details', 'Details on cards (age, job, location, how you met)')}
+      {cardToggle('notes', 'Remembered details on cards')}
+      {cardToggle('flags', 'Green and red flags on cards')}
+      {cardToggle('contact', 'Last contact on cards')}
+
+      <div className="section">Profile sections</div>
+      <p className="hint" style={{ marginTop: 0 }}>Hide the parts of a profile you do not use. Hiding a section only tucks it away: nothing is deleted, and it still counts in Fit.</p>
+      {[['flags', 'Green and red flags on profiles'], ['plans', 'Plan a date on profiles'], ['remember', 'Remember for next time on profiles'], ['prompts', 'Conversation prompts on profiles'], ['timeline', 'Timeline and contact log on profiles']].map(([k, label]) => (
+        <label key={k} className="switch"><input type="checkbox" checked={st.profile[k]} onChange={(e) => store.setSettings({ profile: { [k]: e.target.checked } })} /><span>{label}</span></label>
+      ))}
 
       <div className="section">Reminders</div>
       <label className="field"><span>Remind me about a plan</span>
@@ -2450,7 +2439,7 @@ function PatternsCard({ data }) {
           <p style={{ margin: '0 0 8px' }}><strong>Dates you rated highest:</strong> {acts.map((a) => `${a.activity} (${a.avg.toFixed(1)} across ${a.n})`).join(', ')}.</p>
         )}
         {words.length > 0 && (
-          <p style={{ margin: '0 0 8px' }}><strong>Words that keep coming up in your notes:</strong> {words.map((w) => `${w.word} (${w.n})`).join(', ')}.</p>
+          <p style={{ margin: '0 0 8px' }}><strong>Words that keep coming up in what you wrote:</strong> {words.map((w) => `${w.word} (${w.n})`).join(', ')}.</p>
         )}
         {trends.rows.length > 0 && (
           <div>
@@ -2559,7 +2548,6 @@ function TimelineTab({ data, store, onOpenPerson, onOpenDate }) {
 /* ---------- root ---------- */
 
 const TABS = [
-  { id: 'today', label: 'Today', icon: Sun, sub: 'What needs you right now' },
   { id: 'roster', label: 'People', icon: Users, sub: 'Everyone you are talking to' },
   { id: 'timeline', label: 'Timeline', icon: History, sub: 'Dates, contact and moments in order' },
   { id: 'dates', label: 'Dates', icon: CalendarHeart, sub: 'Your date history' },
@@ -2573,7 +2561,7 @@ export default function App() {
   const [tab, setTab] = useState(() => {
     const q = new URLSearchParams(window.location.search).get('tab')
     const id = q === 'people' ? 'roster' : q
-    return TABS.some((t) => t.id === id) ? id : 'today'
+    return TABS.some((t) => t.id === id) ? id : 'roster'
   })
   const [locked, setLocked] = useState(() => hasPin())
   const hiddenAt = useRef(0)
@@ -2621,15 +2609,14 @@ export default function App() {
       </header>
 
       <main className="scroll">
-        {tab === 'roster' && <People people={data.people} dates={data.dates} store={store} onOpen={(id) => setSheet({ type: 'person', personId: id })} />}
-        {tab === 'today' && <TodayTab data={data} store={store} onOpenPerson={(id) => setSheet({ type: 'person', personId: id })} onOpenDate={openDate} onLogDate={(personId) => setSheet({ type: 'date', defaultPersonId: personId })} />}
+        {tab === 'roster' && <People people={data.people} dates={data.dates} store={store} onOpen={(id) => setSheet({ type: 'person', personId: id })} onLogDate={(personId) => setSheet({ type: 'date', defaultPersonId: personId })} />}
         {tab === 'timeline' && <TimelineTab data={data} store={store} onOpenPerson={(id) => setSheet({ type: 'person', personId: id })} onOpenDate={openDate} />}
-        {tab === 'dates' && <DateLog people={data.people} dates={data.dates} onEdit={(d) => setSheet({ type: 'date', date: d })} />}
+        {tab === 'dates' && <DateLog people={data.people} dates={data.dates} onEdit={(d) => setSheet({ type: 'date', date: d })} onReflect={(id) => openDate(id, true)} />}
         {tab === 'fit' && <Fit data={data} store={store} onOpen={(id) => setSheet({ type: 'person', personId: id })} />}
         {tab === 'insights' && <Insights data={data} store={store} />}
       </main>
 
-      {tab !== 'insights' && tab !== 'fit' && tab !== 'timeline' && tab !== 'today' && (
+      {tab !== 'insights' && tab !== 'fit' && tab !== 'timeline' && (
         <button className="fab" onClick={onFab}>
           <Plus size={20} /> {fabLabel}
         </button>

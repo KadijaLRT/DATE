@@ -20,10 +20,10 @@ PWAs need HTTPS (localhost is exempt) for install and offline use.
 ## Features
 
 - One People tab: search names, jobs, and notes; filter by status; sort by longest since contact; notes and flag preview on each card; an Archived section at the bottom
-- Today screen with reminders and Quick log, plans, "remember for next time", and post-date reflections
+- Conversation prompts, profile sections you can hide, quick log, plans with reminders, "remember for next time" (the single place for details about someone), and post-date reflections
 - Personal patterns, an emotional timeline, undo, an optional PIN lock, and encrypted backups
 - A relationship timeline: dates, contact, your own moments and how it ended, in order, on every profile and on one Timeline tab for everyone
-- Profiles with green and red flags (chosen from a collapsible list, or typed in your own), and bullet-point notes
+- Profiles with green and red flags (chosen from a collapsible list, or typed in your own), and remembered details
 - Date log timeline with 1 to 5 star ratings and follow-up status
 - Voice notes using the browser Web Speech API, turned into bullets on-device
 - Fit tab: say what you want and what you do not want (two separate sides, each with two strengths) and get a Keep pursuing, Keep watching, or Consider letting go call for each person, with reasons
@@ -120,7 +120,7 @@ Old saves are upgraded automatically: the earlier "Deal-breaker" level becomes a
 
 | Profile data | How Fit uses it |
 | --- | --- |
-| Notes, how you met, job, location, contact log notes | Searched for your wants, don't-wants, and keywords. Contact notes the app writes itself ("Matched") are ignored. |
+| Remembered details, how you met, job, location, contact log notes | Searched for your wants, don't-wants, and keywords. Contact notes the app writes itself ("Matched") are ignored. |
 | Green and red flags, including your own | Green raises the score, red lowers it |
 | Dates: rating, activity, impressions | Rating feeds the score; text is searched like notes |
 | Follow-up on your most recent date | Up to 6 points: next date planned +6, you still want to text +1, waiting on them 0, not continuing -6 |
@@ -129,27 +129,29 @@ Old saves are upgraded automatically: the earlier "Deal-breaker" level becomes a
 | Reflections, plans, and remembered details | Their text is searched; quick reflection answers move the score up to 4 points either way |
 | Age and location | Checked against the age range and places you set, as a don't-want at the strength you choose |
 
-The follow-up, contact, feeling, and reflection adjustments add up to at most 10 points either way, and each one is shown on the card with its number. Missing data is never held against someone: no age, no location, no logged contact, or no follow-up simply means no check. Not used: the name and when you added the profile. Ended people are left out of the Fit tab, though their dates still teach it. The Fit tab has a "What Fit reads from each profile" panel with this list.
+The follow-up, contact, feeling, and reflection adjustments add up to at most 10 points either way, and each one is shown on the card with its number. Missing data is never held against someone: no age, no location, no logged contact, or no follow-up simply means no check. Not used: the name and when you added the profile. Ended people are left out of the Fit tab, though their dates still teach it.
 
 Set the age range and places under "What I do not want". Each can be a Red line (forces Consider letting go) or Would rather not (lowers the score by 12, and flags it). Places are comma separated and matched as whole words against the location on the profile.
 
-## Today
+## Quick log, plans, and reminders
 
-The app opens on Today. It shows, in order: reminders for plans coming up (with the things you saved to remember for that person), Quick log, your other plans, dates you have not reflected on yet, your most recent interactions, and who you were last in touch with. Use `?tab=people` (or `today`, `timeline`, `dates`, `fit`, `insights`) on the address to open a specific tab.
+**Quick log** sits at the top of the People tab, collapsed until you open it. Pick a person, then one tap logs "We talked today", one line plus a feeling saves a note to their timeline, and "Log a date" opens the date form for them.
 
-**Quick log** picks a person, then one tap logs "We talked today", one line plus a feeling saves a note to their timeline, and "Log a date" opens the date form for them.
+**Plans and reminders.** On a profile, "Plan a date" saves a day, what, and where, with a reminder on or off. When a plan with a reminder is due (from a few days before, set in Settings from 0 to 7, default 2), a slim "Coming up" banner appears at the top of People with the things you saved to remember for that person. When nothing is due there is no banner. Plans stay on the timeline with a countdown, and a plan whose day has passed offers "It happened: log the date" on the profile. Date-a-Dex sends no notifications, because nothing ever leaves your device.
 
-**Plans and reminders.** On a profile, "Plan a date" saves a day, what, and where, with a reminder on or off. A plan shows on Today as a reminder from a few days before (set the number in Settings, 0 to 7; default 2) and stays on the timeline with a countdown. Plans whose day has passed are listed as "It happened: log the date". Reminders appear when you open the app: Date-a-Dex sends no notifications, because nothing ever leaves your device.
+**Remember for next time** is the one place for details about a person: a like (a coffee order), a place to try, an interest, a topic to bring up, a date idea, or a plain note. Topics and ideas can be ticked off. What you saved shows under their upcoming plan and on People cards. Older saves that had a separate "Things to remember" list were merged into this one automatically, as Notes, so nothing was lost and Fit's results did not change.
 
-**Remember for next time.** Save a like (a coffee order), a place to try, an interest, a topic to bring up, or a date idea. Topics and ideas can be ticked off. What you saved shows under the person's upcoming plan and on their reminder on Today.
+**Conversation prompts** is a collapsed panel on each profile with 36 questions across six themes (getting to know, fun, values, how we talk, care and support, looking ahead). It shows one at a time. "Another" moves to the next, "Save for next time" adds it to Remember for next time as a topic, and "We talked about it" saves it as ticked off and adds a "Talked about: ..." entry to their timeline. A question you have used with someone never comes back for them, and using one with a person does not use it up for anyone else. While someone is still in the talking stage, or you have had fewer than two dates, the lighter questions come first; after that the deeper ones do. The themes alternate so suggestions do not clump, and they are only questions to spark conversation, not advice about anyone.
+
+You can open the app on a specific tab with `?tab=people`, `timeline`, `dates`, `fit`, or `insights` on the address.
 
 ## Reflections after a date
 
-In the date form, "Reflect on this date (optional)" asks: comfortable being myself, heard and understood, enjoyed our time, respected, and whether you want to see them again (Yes / Somewhat / No, tap again to clear), plus "anything I want to understand better" and a journal box. Every question can be skipped. Reflections show as chips on the timeline, and Today lists dates from the last three weeks you have not reflected on. In Fit, your three most recent reflections with quick answers can move the score up to 4 points, inside the same shared 10 point cap as follow-ups, contact and feelings. Text-only reflections do not change the score, but their words are searched by your keywords.
+In the date form, "Reflect on this date (optional)" asks: comfortable being myself, heard and understood, enjoyed our time, respected, and whether you want to see them again (Yes / Somewhat / No, tap again to clear), plus "anything I want to understand better" and a journal box. Every question can be skipped. Reflections show as chips on the timeline, and the Dates tab has a collapsed "Unfinished reflections" panel listing dates from the last three weeks you have not reflected on. In Fit, your three most recent reflections with quick answers can move the score up to 4 points, inside the same shared 10 point cap as follow-ups, contact and feelings. Text-only reflections do not change the score, but their words are searched by your keywords.
 
 ## Fit, explained in four parts
 
-Each card is split into **Compatibility** (how what you recorded lines up with what you want), **Personal experience** (ratings, follow-up, contact, feelings, reflections), **Unknowns** (things you care about that nothing has been recorded for yet, including a missing age or location when you set preferences), and **Evidence** (the confidence level and how many dates, reflections, notes, contacts, moments, flags and plans it rests on). The scoring rules did not change; only how they are presented.
+Everything on the Fit tab starts collapsed: "What I am looking for", "What I have learned about you", and each person's card, which shows only their name, the call, and the score until you open "Why this call". Inside, each card is split into **Compatibility** (how what you recorded lines up with what you want), **Personal experience** (ratings, follow-up, contact, feelings, reflections), **Unknowns** (things you care about that nothing has been recorded for yet, including a missing age or location when you set preferences), and **Evidence** (the confidence level and how many dates, reflections, notes, contacts, moments, flags and plans it rests on). The scoring rules did not change; only how they are presented.
 
 ## Patterns in your own entries (Insights)
 
@@ -165,7 +167,8 @@ Deleting a person, date, contact, moment, plan, or reminder, or erasing everythi
 - **Privacy dashboard**: what is stored, roughly how big it is, whether the lock is on, and when you last made a backup. Everything is stored only in this browser.
 - **App lock**: a 4 to 8 digit PIN, stored only as a salted PBKDF2 hash. It locks when you open the app and after you have been away for the time you choose (every time, 1 minute, 5 minutes, or 1 hour), or with Lock now. Five wrong PINs in a row make you wait 30 seconds. It keeps casual snoopers out. **It does not encrypt what is saved in the browser**, and if you forget the PIN the only way back in is clearing this site's data, which erases everything, so keep a backup.
 - **Backups**: a plain JSON backup, restore, and an **encrypted backup** protected by a passphrase you choose (AES-256-GCM, key derived with PBKDF2, at least 8 characters). There is no recovery: lose the passphrase and that file cannot be opened by anyone. Restore detects encrypted files and asks for the passphrase; a wrong one changes nothing. Your settings are included in a backup, but your PIN is never exported.
-- **People cards**: choose whether each card shows details, notes, flags, and last contact. Profiles always show everything.
+- **People cards**: choose whether each card shows details, remembered details, flags, and last contact. Profiles always show everything.
+- **Profile sections**: hide the parts of a profile you do not use (flags, plans, remember for next time, conversation prompts, timeline and contact log). Hiding only tucks a section away: nothing is deleted, and hidden data still counts in Fit.
 - **Reminders**: how many days before a plan to remind you.
 - **Erase everything** (with undo).
 
