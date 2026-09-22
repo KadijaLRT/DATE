@@ -8,6 +8,9 @@ export const MAX_DRAFTS = 20
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const FOLLOW = new Set(['none', 'me', 'them', 'planned', 'done'])
 const MOMENT = new Set(['conversation', 'plan', 'milestone', 'feeling'])
+const HANGOUT = new Set(['inperson', 'call', 'activity', 'other'])
+const FOLLOW_THROUGH = new Set(['pending', 'yes', 'no', 'partial'])
+const FLAG = new Set(['green', 'red'])
 const FEEL = new Set(['great', 'good', 'okay', 'uneasy', 'rough'])
 const str = (x, n) => (typeof x === 'string' ? x.slice(0, n) : '')
 
@@ -36,6 +39,26 @@ const KINDS = {
       feeling: FEEL.has(d.feeling) ? d.feeling : ''
     }
     return out.text.trim() || out.feeling ? out : null
+  },
+  hangout(d) {
+    if (!d || typeof d !== 'object') return null
+    const out = {
+      type: HANGOUT.has(d.type) ? d.type : 'inperson',
+      date: DAY.test(d.date || '') ? d.date : '',
+      text: str(d.text, 400),
+      feeling: FEEL.has(d.feeling) ? d.feeling : ''
+    }
+    return out.text.trim() || out.feeling ? out : null
+  },
+  promise(d) {
+    if (!d || typeof d !== 'object') return null
+    const out = {
+      date: DAY.test(d.date || '') ? d.date : '',
+      text: str(d.text, 300),
+      followThrough: FOLLOW_THROUGH.has(d.followThrough) ? d.followThrough : 'pending',
+      flag: FLAG.has(d.flag) ? d.flag : ''
+    }
+    return out.text.trim() ? out : null
   },
   plan(d) {
     if (!d || typeof d !== 'object') return null

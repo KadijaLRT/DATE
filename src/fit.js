@@ -74,6 +74,15 @@ export const TRAITS = [
     badTags: [],
     words: ['mature', 'stable', 'calm', 'emotionally intelligent', 'self aware', 'therapy', 'healthy'],
     badWords: ['drama', 'dramatic', 'temper', 'jealous', 'angry', 'unstable', 'toxic', 'clingy', 'needy', 'moody', 'insecure', 'emotional baggage', 'mean about his ex', 'mean about her ex']
+  },
+  {
+    id: 'quality_time',
+    label: 'Spends quality time together',
+    avoidLabel: 'Rarely makes time to hang out',
+    tags: [],
+    badTags: [],
+    words: ['hung out', 'hang out', 'spent the day', 'spent the evening', 'watched a movie', 'cooked together', 'went for a walk', 'came over', 'stayed in'],
+    badWords: ['never has time', 'always busy', 'never free', 'no time for me', 'wont hang out', "won't hang out", 'never makes time']
   }
 ]
 
@@ -113,7 +122,7 @@ export const MAX_MOMENT_TEXT = 600
 const MOMENT_TYPE_IDS = new Set(MOMENT_TYPES.map((t) => t.id))
 const FEELING_VALUE = Object.fromEntries(FEELINGS.map((f) => [f.id, f.value]))
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
-const validDay = (d) => typeof d === 'string' && DAY_RE.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z'))
+export const validDay = (d) => typeof d === 'string' && DAY_RE.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z'))
 
 export function momentsOf(person) {
   const raw = Array.isArray(person?.moments) ? person.moments : []
@@ -130,6 +139,74 @@ export function momentsOf(person) {
     out.push({ id, date: m.date, type: MOMENT_TYPE_IDS.has(m.type) ? m.type : 'conversation', text, feeling })
   })
   return out.slice(0, MAX_MOMENTS)
+}
+
+/**
+ * Promises: things they said, worth remembering, whether or not they followed through. Each has the day they said it,
+ * the words (paraphrased or quoted), optionally whether they followed through, and optionally whether you consider it
+ * a green or red flag. They show on the timeline and, when marked green or red, feed Fit like your other flags.
+ */
+export const FOLLOW_THROUGH = [
+  { id: 'pending', label: 'Too soon to tell' },
+  { id: 'yes', label: 'Followed through' },
+  { id: 'no', label: 'Did not follow through' },
+  { id: 'partial', label: 'Partly' }
+]
+export const MAX_PROMISES = 100
+export const MAX_PROMISE_TEXT = 300
+const FOLLOW_THROUGH_IDS = new Set(FOLLOW_THROUGH.map((f) => f.id))
+
+export function promisesOf(person) {
+  const raw = Array.isArray(person?.promises) ? person.promises : []
+  const out = []
+  const seen = new Set()
+  raw.forEach((pr, i) => {
+    if (!pr || typeof pr !== 'object' || !validDay(pr.date)) return
+    const text = typeof pr.text === 'string' ? pr.text.trim().slice(0, MAX_PROMISE_TEXT) : ''
+    if (!text) return
+    let id = typeof pr.id === 'string' && pr.id ? pr.id : `pr-${i}`
+    while (seen.has(id)) id += '_'
+    seen.add(id)
+    out.push({
+      id,
+      date: pr.date,
+      text,
+      followThrough: FOLLOW_THROUGH_IDS.has(pr.followThrough) ? pr.followThrough : 'pending',
+      flag: pr.flag === 'green' || pr.flag === 'red' ? pr.flag : null
+    })
+  })
+  return out.slice(0, MAX_PROMISES)
+}
+
+/**
+ * Hangouts: time spent together that is not a formal date, logged separately (a walk, a call, watching a show,
+ * running errands together). Each has a day, a kind, optional text, and optionally how it made you feel.
+ * They show on the timeline, count as activity for the week strip, and feed Fit like everything else on a profile.
+ */
+export const HANGOUT_TYPES = [
+  { id: 'inperson', label: 'Hung out' },
+  { id: 'call', label: 'Call or video chat' },
+  { id: 'activity', label: 'Did something together' },
+  { id: 'other', label: 'Other' }
+]
+export const MAX_HANGOUTS = 200
+export const MAX_HANGOUT_TEXT = 400
+const HANGOUT_TYPE_IDS = new Set(HANGOUT_TYPES.map((t) => t.id))
+
+export function hangoutsOf(person) {
+  const raw = Array.isArray(person?.hangouts) ? person.hangouts : []
+  const out = []
+  const seen = new Set()
+  raw.forEach((h, i) => {
+    if (!h || typeof h !== 'object' || !validDay(h.date)) return
+    const text = typeof h.text === 'string' ? h.text.trim().slice(0, MAX_HANGOUT_TEXT) : ''
+    const feeling = typeof h.feeling === 'string' && h.feeling in FEELING_VALUE ? h.feeling : null
+    let id = typeof h.id === 'string' && h.id ? h.id : `h-${i}`
+    while (seen.has(id)) id += '_'
+    seen.add(id)
+    out.push({ id, date: h.date, type: HANGOUT_TYPE_IDS.has(h.type) ? h.type : 'inperson', text, feeling })
+  })
+  return out.slice(0, MAX_HANGOUTS)
 }
 
 /**
@@ -334,7 +411,7 @@ function hasUnnegated(text, phrase) {
 
 function evidenceText(person, dates) {
   const mine = dates.filter((d) => d.personId === person.id)
-  const parts = [...(person.notes || []), person.met, person.job, ...realContacts(person).map((c) => c.note), ...momentsOf(person).map((m) => m.text), ...plansOf(person).flatMap((x) => [x.title, x.place]), ...rememberOf(person).map((x) => x.text)]
+  const parts = [...(person.notes || []), person.met, person.job, ...realContacts(person).map((c) => c.note), ...momentsOf(person).map((m) => m.text), ...hangoutsOf(person).map((h) => h.text), ...plansOf(person).flatMap((x) => [x.title, x.place]), ...rememberOf(person).map((x) => x.text)]
   mine.forEach((d) => {
     parts.push(d.activity)
     const rf = reflectionOf(d)
@@ -357,6 +434,7 @@ function evidenceSegments(person, dates) {
   push('their location', person.location)
   realContacts(person).filter((c) => !isSystemContact(c)).forEach((c) => push('a contact note', c.note))
   momentsOf(person).forEach((m) => push('a moment', m.text))
+  hangoutsOf(person).forEach((h) => push('time together', h.text))
   plansOf(person).forEach((x) => { push('a plan', x.title); push('a plan', x.place) })
   rememberOf(person).forEach((x) => push(x.kind === 'note' ? 'a note' : 'a remembered detail', x.text))
   dates
@@ -615,8 +693,8 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
     }
   }
 
-  // 5d. How you have felt around them: your most recent five moments that carry a feeling (up to 4 points either way).
-  const felt = momentsOf(person).filter((m) => m.feeling).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)
+  // 5d. How you have felt around them: your most recent five moments or hangouts that carry a feeling (up to 4 points either way).
+  const felt = [...momentsOf(person), ...hangoutsOf(person)].filter((m) => m.feeling).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)
   if (felt.length) {
     const avg = felt.reduce((sum, m) => sum + FEELING_VALUE[m.feeling], 0) / felt.length
     const pts = Math.round(avg * 4)
@@ -647,6 +725,28 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
     })
   }
 
+  // 5f. How much time you actually spend together outside of dates (weight 1). No logged hangouts means no opinion,
+  // same as contact: this never penalizes a new connection for lacking history.
+  const hangouts = hangoutsOf(person)
+  if (hangouts.length) {
+    const ago = (h) => Math.round((dayMs(today) - dayMs(h.date)) / 86400000)
+    const gaps = hangouts.map(ago).filter((n) => n >= 0)
+    if (gaps.length) {
+      const last = Math.min(...gaps)
+      const month = gaps.filter((n) => n <= 30).length
+      const recency = last <= 3 ? 1 : last <= 7 ? 0.8 : last <= 14 ? 0.5 : last <= 30 ? 0.25 : 0
+      const freq = month >= 6 ? 1 : month >= 3 ? 0.7 : month >= 1 ? 0.4 : 0
+      const engagement = (recency + freq) / 2
+      const pts = Math.round((engagement - 0.5) * 8) // spending real time together +4, none lately -4
+      profileAdjust += pts
+      evidenceHits += 1
+      reasons.push({
+        kind: pts > 0 ? 'good' : pts < 0 ? 'warn' : 'unknown',
+        text: `Time together: last logged ${last === 0 ? 'today' : last === 1 ? 'yesterday' : last + ' days ago'}, ${month} in the past 30 days${pts ? ` (${pts > 0 ? '+' : ''}${pts} points)` : ''}.`
+      })
+    }
+  }
+
   // 6. Red-flag tags they carry that were not red lines still count against them.
   const redCount = (person.tags || []).filter((t) =>
     ['inconsistent', 'slowreply', 'vague', 'selfabsorbed', 'pushy'].includes(t)
@@ -664,8 +764,41 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
       text: `Flags you added: ${customGreen} green, ${customRed} red (${custom.map((f) => f.label).slice(0, 3).join(', ')}${custom.length > 3 ? ', …' : ''}).`
     })
   }
+
+  // 6b. Things they said that you flagged green or red count the same as any other flag you added.
+  const promises = promisesOf(person)
+  const flaggedPromises = promises.filter((pr) => pr.flag)
+  const promiseGreen = flaggedPromises.filter((pr) => pr.flag === 'green').length
+  const promiseRed = flaggedPromises.filter((pr) => pr.flag === 'red').length
+  if (flaggedPromises.length) {
+    reasons.push({
+      kind: promiseRed > promiseGreen ? 'warn' : promiseGreen > promiseRed ? 'good' : 'unknown',
+      text: `Things they said, flagged: ${promiseGreen} green, ${promiseRed} red.`
+    })
+  }
+  // A promise you marked broken is its own, stronger signal, separate from the flag color: someone can break a
+  // promise you never flagged at all, and that still matters.
+  const broken = promises.filter((pr) => pr.followThrough === 'no')
+  if (broken.length) {
+    profileAdjust -= Math.min(6, broken.length * 3)
+    evidenceHits += 1
+    reasons.push({
+      kind: 'bad',
+      text: `Did not follow through on ${broken.length} thing${broken.length === 1 ? '' : 's'} they said${broken.length === 1 && broken[0].text ? `: "${clip(broken[0].text, 50)}"` : ''}.`
+    })
+  }
+  const keptCount = promises.filter((pr) => pr.followThrough === 'yes').length
+  if (keptCount) {
+    profileAdjust += Math.min(4, keptCount * 2)
+    evidenceHits += 1
+    reasons.push({
+      kind: 'good',
+      text: `Followed through on ${keptCount} thing${keptCount === 1 ? '' : 's'} they said.`
+    })
+  }
+
   possible += 2
-  earned += Math.max(0, Math.min(2, 1 + (greenCount + customGreen - redCount - customRed) * 0.4))
+  earned += Math.max(0, Math.min(2, 1 + (greenCount + customGreen + promiseGreen - redCount - customRed - promiseRed) * 0.4))
 
   const baseScore = Math.max(0, Math.min(100, (possible > 0 ? Math.round((earned / possible) * 100) : 0) + Math.max(-10, Math.min(10, profileAdjust))))
   // "Would rather not" lowers the score by a fixed, visible amount. It is capped so a pile of small dislikes
@@ -732,6 +865,8 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
     notes: (person.notes || []).length + rememberOf(person).filter((x) => x.kind === 'note').length,
     contacts: touch.length,
     moments: momentsOf(person).length,
+    hangouts: hangoutsOf(person).length,
+    promises: promisesOf(person).length,
     plans: plansOf(person).length,
     flags: (person.tags || []).length + custom.length,
     remembered: rememberOf(person).filter((x) => x.kind !== 'note').length
@@ -758,7 +893,7 @@ const order = { bad: 0, warn: 1, good: 2, unknown: 3 }
 // Which of the four explanation sections a reason belongs to.
 export function sectionOf(r) {
   if (r.kind === 'unknown' && /nothing recorded yet/.test(r.text)) return 'unknowns'
-  if (/^(Your last logged follow-up|Contact:|How you have felt|After your reflections|Your dates with them average)/.test(r.text)) return 'experience'
+  if (/^(Your last logged follow-up|Contact:|Time together:|How you have felt|After your reflections|Your dates with them average|Did not follow through on|Followed through on)/.test(r.text)) return 'experience'
   return 'compatibility'
 }
 // How positive each follow-up is, and how it reads in a reason.

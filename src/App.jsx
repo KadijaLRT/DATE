@@ -3,7 +3,7 @@ import {
   Users, CalendarHeart, BarChart3, Plus, X, Mic, Square,
   Star, Trash2, Archive, ArchiveRestore, Download, Upload, Scale,
   MessageCircle, Sparkles, Heart, Flag, History, Settings as SettingsIcon, Lock, Undo2, Bell, CalendarClock,
-  Camera, LayoutGrid, User, Check, ChevronRight
+  Camera, LayoutGrid, User, Check, ChevronRight, Users2, MapPin, MessageSquareQuote
 } from 'lucide-react'
 import {
   useStore, uid, STATUSES, ACTIVE_STATUSES, END_REASONS, isActive, TAGS, agoLabel, daysSince, fmtDate, lastContactOf, todayDay
@@ -18,7 +18,7 @@ import { LOCK_CHOICES } from './settings.js'
 import { hasPin, setPin, verifyPin, clearPin, waitLeft, recordFail, resetFails, PIN_RE } from './lock.js'
 import { PROMPT_CATEGORIES, candidates as promptCandidates, usedPromptIds } from './prompts.js'
 import { encryptBackup, decryptBackup, isEncryptedBackup, MIN_PASSPHRASE } from './vault.js'
-import { plansOf, rememberOf, reflectionOf, REMEMBER_KINDS, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS, MAX_PLAN_TEXT, MAX_REMEMBER_TEXT, MAX_REFLECTION_NOTE, MAX_REFLECTION_JOURNAL, momentsOf, FEELINGS, MOMENT_TYPES, MAX_MOMENT_TEXT, customFlagsOf, MAX_CUSTOM_FLAGS, MAX_FLAG_LENGTH, TRAITS, WANT_LEVELS, AVOID_LEVELS, VERDICT, SOFT_PENALTY, evaluate, hasCriteria, normalizeCriteria, splitWords, wordHits } from './fit.js'
+import { plansOf, rememberOf, reflectionOf, REMEMBER_KINDS, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS, MAX_PLAN_TEXT, MAX_REMEMBER_TEXT, MAX_REFLECTION_NOTE, MAX_REFLECTION_JOURNAL, momentsOf, hangoutsOf, promisesOf, FEELINGS, MOMENT_TYPES, HANGOUT_TYPES, FOLLOW_THROUGH, MAX_MOMENT_TEXT, MAX_HANGOUT_TEXT, MAX_PROMISE_TEXT, customFlagsOf, MAX_CUSTOM_FLAGS, MAX_FLAG_LENGTH, TRAITS, WANT_LEVELS, AVOID_LEVELS, VERDICT, SOFT_PENALTY, evaluate, hasCriteria, normalizeCriteria, splitWords, wordHits } from './fit.js'
 import { buildModel, adjustedWeight, MIN_FEEDBACK } from './learn.js'
 import { parseDescription } from './describe.js'
 
@@ -359,8 +359,8 @@ function QuickAdd({ onSave, onClose }) {
 
 /* ---------- timeline ---------- */
 
-const KIND_ICON = { date: CalendarHeart, contact: MessageCircle, moment: Sparkles, matched: Heart, ended: Flag, plan: CalendarClock }
-const KIND_LABEL = { date: 'Date', contact: 'In touch', matched: 'Matched', ended: 'Let go', plan: 'Planned' }
+const KIND_ICON = { date: CalendarHeart, contact: MessageCircle, moment: Sparkles, hangout: Users2, promise: MessageSquareQuote, matched: Heart, met: MapPin, ended: Flag, plan: CalendarClock }
+const KIND_LABEL = { date: 'Date', contact: 'In touch', matched: 'Matched', met: 'First met', ended: 'Let go', plan: 'Planned' }
 const FEEL_LABEL = Object.fromEntries(FEELINGS.map((f) => [f.id, f.label]))
 const FEEL_CLASS = { great: 'green', good: 'green', okay: 'plain', uneasy: 'amber', rough: 'red' }
 
@@ -376,7 +376,7 @@ function TimelineList({ entries, showPerson, onOpenPerson, onOpenDate, onDelete,
       rows.push(<li key={'g:' + parts.group} className="story-month">{parts.group}</li>)
     }
     const Icon = KIND_ICON[e.kind]
-    const chip = e.kind === 'moment' ? e.title : KIND_LABEL[e.kind]
+    const chip = e.kind === 'moment' || e.kind === 'hangout' || e.kind === 'promise' ? e.title : KIND_LABEL[e.kind]
     const heading = (e.kind === 'date' && e.title !== 'Date') || e.kind === 'plan' ? e.title : ''
     rows.push(
       <li key={e.key} className="story-item">
@@ -397,7 +397,7 @@ function TimelineList({ entries, showPerson, onOpenPerson, onOpenDate, onDelete,
             )}
             {e.deletable && (
               <button type="button" className="icon-btn story-x"
-                aria-label={e.kind === 'moment' ? `Delete moment on ${fmtDate(e.date)}` : e.kind === 'plan' ? `Delete plan on ${fmtDate(e.date)}` : `Delete contact on ${fmtDate(e.date)}`}
+                aria-label={e.kind === 'moment' ? `Delete moment on ${fmtDate(e.date)}` : e.kind === 'hangout' ? `Delete time together on ${fmtDate(e.date)}` : e.kind === 'promise' ? `Delete: ${e.text}` : e.kind === 'plan' ? `Delete plan on ${fmtDate(e.date)}` : `Delete contact on ${fmtDate(e.date)}`}
                 onClick={() => onDelete(e)}>
                 <X size={16} />
               </button>
@@ -406,14 +406,20 @@ function TimelineList({ entries, showPerson, onOpenPerson, onOpenDate, onDelete,
           {heading && <div className="story-title">{heading}</div>}
           {e.text && <p className="story-text">{e.text}</p>}
           {e.bullets?.length > 0 && <ul className="story-bullets">{e.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>}
-          {(e.feeling || e.followUp || e.reflection?.length > 0) && (
+          {(e.feeling || e.followUp || e.reflection?.length > 0 || e.kind === 'promise') && (
             <div className="mini" style={{ marginTop: 6 }}>
               {e.feeling && <span className={'tag ' + FEEL_CLASS[e.feeling]}>Felt {FEEL_LABEL[e.feeling]}</span>}
               {e.followUp && <span className="tag">{e.followUp}</span>}
               {(e.reflection || []).map((c) => <span key={c} className="tag plain">{c}</span>)}
+              {e.kind === 'promise' && e.promiseFlag && <span className={'tag ' + e.promiseFlag}>{e.promiseFlag === 'green' ? 'Green flag' : 'Red flag'}</span>}
+              {e.kind === 'promise' && (
+                <span className={'tag' + (e.followThrough === 'no' ? ' red' : e.followThrough === 'yes' ? ' green' : e.followThrough === 'partial' ? ' amber' : '')}>
+                  {e.followThroughLabel}
+                </span>
+              )}
             </div>
           )}
-          {e.kind === 'moment' && onEdit && (
+          {(e.kind === 'moment' || e.kind === 'hangout') && onEdit && (
             <button type="button" className="btn ghost story-open" onClick={() => onEdit(e)}>Edit</button>
           )}
           {e.kind === 'date' && (
@@ -490,6 +496,68 @@ function AddMoment({ onAdd, onCancel, initial = null, draftKey = null }) {
   )
 }
 
+function AddHangout({ onAdd, onCancel, initial = null, draftKey = null }) {
+  const [type, setType] = useState(initial?.hangoutType || 'inperson')
+  const [day, setDay] = useState(initial?.date || todayDay())
+  const [text, setText] = useState(initial?.text || '')
+  const [feeling, setFeeling] = useState(initial?.feeling || '')
+  const [msg, setMsg] = useState('')
+  const speech = useSpeech((t) => setText((cur) => (cur ? cur + ' ' : '') + t))
+  const draft = useDraft(draftKey || 'hangout:none', { type, date: day, text, feeling }, Boolean(draftKey) && !initial)
+
+  const save = () => {
+    if (!day) return setMsg('Pick the day this happened. What you wrote is still here.')
+    if (day > todayDay()) return setMsg('That day has not happened yet. Pick today or earlier, or use Plan a date for something ahead. What you wrote is still here.')
+    onAdd({ date: day, type, text: text.trim().slice(0, MAX_HANGOUT_TEXT), feeling: feeling || null })
+    draft.done()
+  }
+  const restore = () => { const d = draft.take(); if (d) { setType(d.type); setDay(d.date || day); setText(d.text); setFeeling(d.feeling) } }
+
+  return (
+    <div className="stat" style={{ marginTop: 10 }}>
+      <h4>{initial ? 'Edit time together' : 'Log time together'}</h4>
+      <p className="hint" style={{ margin: '0 0 10px' }}>For time spent together that was not a formal date: a call, a walk, watching something, running an errand together.</p>
+      <DraftBanner draft={draft} what="log of time together" onRestore={restore} onDiscard={draft.discard} />
+      <div className="tagpick" role="group" aria-label="Kind of time together">
+        {HANGOUT_TYPES.map((t) => (
+          <button key={t.id} type="button" className="plain" aria-pressed={type === t.id} onClick={() => setType(t.id)}>{t.label}</button>
+        ))}
+      </div>
+      <label className="field" style={{ marginTop: 10 }}>
+        <span>When</span>
+        <input className="in" type="date" value={day} max={todayDay()} onChange={(e) => setDay(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>What you did (optional)</span>
+        <textarea className="in" maxLength={MAX_HANGOUT_TEXT} value={text} placeholder="Cooked dinner and watched a movie."
+          {...errProps('hangout-err', msg)} onChange={(e) => { setText(e.target.value); setMsg('') }} />
+      </label>
+      {speech.supported && (
+        <button type="button" className={'btn rose ' + (speech.listening ? 'pulse' : '')} onClick={speech.listening ? speech.stop : speech.start}>
+          {speech.listening ? <Square size={18} /> : <Mic size={18} />}
+          {speech.listening ? 'Stop' : 'Speak it'}
+        </button>
+      )}
+      {speech.listening && <div className="live">{speech.interim || 'Listening…'}</div>}
+      <span className="lbl" style={{ marginTop: 12 }}>How did it feel? (optional)</span>
+      <div className="tagpick" role="group" aria-label="How it felt">
+        {FEELINGS.map((f) => (
+          <button key={f.id} type="button" className={FEEL_CLASS[f.id]} aria-pressed={feeling === f.id}
+            onClick={() => { setFeeling(feeling === f.id ? '' : f.id); setMsg('') }}>{f.label}</button>
+        ))}
+      </div>
+      <p className="hint" style={{ margin: '6px 0 0' }}>
+        Counts toward Fit: how often and how recently you spend time together, and, if you say how it felt, alongside your moment feelings, up to 4 points either way.
+      </p>
+      <FieldError id="hangout-err" msg={msg} />
+      <div className="btnrow">
+        <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn primary" onClick={save}>{initial ? 'Save changes' : 'Save'}</button>
+      </div>
+    </div>
+  )
+}
+
 function ContactLog({ person, dates, store, hideTalked = false }) {
   const [day, setDay] = useState(todayDay())
   const [note, setNote] = useState('')
@@ -518,7 +586,7 @@ function ContactLog({ person, dates, store, hideTalked = false }) {
       <div className="two" style={{ alignItems: 'end' }}>
         <label className="field" style={{ marginBottom: 0 }}>
           <span>Another day</span>
-          <input className="in" type="date" value={day} max={todayDay()} onChange={(e) => setDay(e.target.value)} />
+          <input className="in" type="date" aria-label="Another day" value={day} max={todayDay()} onChange={(e) => setDay(e.target.value)} />
         </label>
         <label className="field" style={{ marginBottom: 0 }}>
           <span>Note (optional)</span>
@@ -667,7 +735,7 @@ function ReflectionsSummary({ person, dates, onEditDate }) {
 }
 
 function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onOpenFit }) {
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useState(false) // false | 'moment' | 'hangout'
   const [editMoment, setEditMoment] = useState(null)
   const [photoMsg, setPhotoMsg] = useState('')
   const photoRef = useRef(null)
@@ -678,14 +746,14 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
 
   const talkedToday = (person.contacts || []).some((c) => c.date === today && !/^matched$/i.test((c.note || '').trim()))
   const next = plansOf(person).filter((x) => x.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0]
-  const last = buildTimeline([person], dates, { personId: person.id }).find((e) => e.kind !== 'plan' && e.kind !== 'matched' && e.date && e.date <= today)
-  const highlight = momentsOf(person).filter((m) => m.text).sort((a, b) => b.date.localeCompare(a.date))[0]?.text || rememberOf(person).find((r) => !r.done)?.text
+  const last = buildTimeline([person], dates, { personId: person.id }).find((e) => e.kind !== 'plan' && e.kind !== 'matched' && e.kind !== 'met' && e.date && e.date <= today)
+  const highlight = [...momentsOf(person), ...hangoutsOf(person)].filter((m) => m.text).sort((a, b) => b.date.localeCompare(a.date))[0]?.text || rememberOf(person).find((r) => !r.done)?.text
   const details = [person.age && `${person.age}`, person.job, person.location, person.met && `via ${person.met}`].filter(Boolean).join(' · ')
   const fit = useMemo(() => (hasCriteria(store.data.criteria) ? evaluate(person, dates, store.data.criteria, null) : null), [person, dates, store.data.criteria])
 
   const sections = [
     { id: 'about', label: 'About', on: true },
-    { id: 'plans', label: 'Plans', on: show.plans || show.remember || show.prompts },
+    { id: 'plans', label: 'Plans', on: show.plans || show.remember || show.promises || show.prompts },
     { id: 'reflections', label: 'Reflections', on: true },
     { id: 'fit', label: 'Fit', on: true },
     { id: 'timeline', label: 'Timeline', on: show.timeline }
@@ -732,7 +800,10 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
           {talkedToday ? 'Talked today ✓' : 'We talked today'}
         </button>
         {show.timeline && (
-          <button className="btn ghost" onClick={() => { setAdding(true); setEditMoment(null); setTimeout(() => goTo('timeline'), 0) }}><Sparkles size={18} /> Add a moment</button>
+          <button className="btn ghost" onClick={() => { setAdding('moment'); setEditMoment(null); setTimeout(() => goTo('timeline'), 0) }}><Sparkles size={18} /> Add a moment</button>
+        )}
+        {show.timeline && (
+          <button className="btn ghost" onClick={() => { setAdding('hangout'); setEditMoment(null); setTimeout(() => goTo('timeline'), 0) }}><Users2 size={18} /> Log time together</button>
         )}
       </div>
 
@@ -743,7 +814,7 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
         </div>
         <div>
           <dt>Last interaction</dt>
-          <dd>{last ? `${agoLabel(last.date)}: ${last.kind === 'date' ? (last.title === 'Date' ? 'a date' : last.title) : last.kind === 'moment' ? last.title.toLowerCase() : 'in touch'}` : 'Nothing logged yet'}</dd>
+          <dd>{last ? `${agoLabel(last.date)}: ${last.kind === 'date' ? (last.title === 'Date' ? 'a date' : last.title) : last.kind === 'moment' || last.kind === 'hangout' ? last.title.toLowerCase() : last.kind === 'promise' ? 'something they said' : 'in touch'}` : 'Nothing logged yet'}</dd>
         </div>
         <div>
           <dt>Worth remembering</dt>
@@ -777,10 +848,16 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
             <span>Occupation</span>
             <input className="in" value={person.job} onChange={(e) => set({ job: e.target.value })} />
           </label>
-          <label className="field">
-            <span>How you met</span>
-            <input className="in" value={person.met} onChange={(e) => set({ met: e.target.value })} />
-          </label>
+          <div className="two">
+            <label className="field">
+              <span>How you met</span>
+              <input className="in" value={person.met} onChange={(e) => set({ met: e.target.value })} />
+            </label>
+            <label className="field">
+              <span>First met</span>
+              <input className="in" type="date" aria-label="First met" max={todayDay()} value={person.metDate} onChange={(e) => set({ metDate: e.target.value })} />
+            </label>
+          </div>
           {show.flags && (
             <>
               <div className="section">Green and red flags</div>
@@ -790,7 +867,7 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
         </div>
       </details>
 
-      {(show.plans || show.remember || show.prompts) && (
+      {(show.plans || show.remember || show.promises || show.prompts) && (
         <details id="sec-plans" className="psec">
           <summary>Plans and reminders</summary>
           <div className="pcontent">
@@ -804,6 +881,12 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
               <>
                 <div className="section">Remember for next time</div>
                 <RememberSection person={person} store={store} />
+              </>
+            )}
+            {show.promises && (
+              <>
+                <div className="section">Things they said</div>
+                <PromisesSection person={person} store={store} />
               </>
             )}
             {show.prompts && <PromptSection person={person} dates={dates} store={store} />}
@@ -837,9 +920,21 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
           <summary>Timeline</summary>
           <div className="pcontent">
             <ContactLog person={person} dates={dates} store={store} hideTalked />
-            {adding || editMoment ? (
+            {(adding === 'hangout' || editMoment?.kind === 'hangout') ? (
+              <AddHangout
+                key={editMoment?.refId || 'new-hangout'}
+                initial={editMoment}
+                draftKey={'hangout:' + person.id}
+                onCancel={() => { setAdding(false); setEditMoment(null) }}
+                onAdd={(h) => {
+                  if (editMoment) store.updateHangout(person.id, editMoment.refId, h)
+                  else store.addHangout(person.id, h)
+                  setAdding(false); setEditMoment(null)
+                }}
+              />
+            ) : (adding === 'moment' || editMoment?.kind === 'moment') ? (
               <AddMoment
-                key={editMoment?.refId || 'new'}
+                key={editMoment?.refId || 'new-moment'}
                 initial={editMoment}
                 draftKey={'moment:' + person.id}
                 onCancel={() => { setAdding(false); setEditMoment(null) }}
@@ -853,11 +948,13 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
             <div style={{ marginTop: 14 }}>
               <TimelineList
                 entries={buildTimeline([person], dates, { personId: person.id, endReasons: END_REASONS })}
-                empty="Nothing here yet. Log a date, a contact, or a moment and it will appear in order."
+                empty="Nothing here yet. Log a date, a contact, time together, or a moment and it will appear in order."
                 onEdit={(e) => { setEditMoment(e); setAdding(false) }}
                 onOpenDate={(id) => { const d = dates.find((x) => x.id === id); if (d) onEditDate(d) }}
                 onDelete={(e) => {
                   if (e.kind === 'moment') store.deleteMoment(person.id, e.refId)
+                  else if (e.kind === 'hangout') store.deleteHangout(person.id, e.refId)
+                  else if (e.kind === 'promise') store.deletePromise(person.id, e.refId)
                   else if (e.kind === 'plan') store.deletePlan(person.id, e.refId)
                   else store.deleteContact(person.id, e.refId)
                 }}
@@ -2266,6 +2363,92 @@ function RememberSection({ person, store }) {
           onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} />
         <button type="button" className="btn ghost" onClick={add} aria-label="Add reminder"><Plus size={18} /></button>
       </div>
+    </div>
+  )
+}
+
+const FLAG_PICK = [
+  { id: 'green', label: 'Green flag' },
+  { id: 'red', label: 'Red flag' }
+]
+
+// Things they said: promises, plans, or just comments worth remembering, whether or not they followed through.
+function PromisesSection({ person, store }) {
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [day, setDay] = useState(todayDay())
+  const [text, setText] = useState('')
+  const [followThrough, setFollowThrough] = useState('pending')
+  const [flag, setFlag] = useState('')
+  const [msg, setMsg] = useState('')
+  const items = promisesOf(person).slice().sort((a, b) => b.date.localeCompare(a.date))
+
+  const reset = () => { setDay(todayDay()); setText(''); setFollowThrough('pending'); setFlag(''); setMsg(''); setOpen(false); setEditing(null) }
+  const startEdit = (pr) => { setEditing(pr); setDay(pr.date); setText(pr.text); setFollowThrough(pr.followThrough); setFlag(pr.flag || ''); setOpen(true) }
+  const save = () => {
+    if (!day) return setMsg('Pick the day they said it. What you wrote is still here.')
+    if (day > todayDay()) return setMsg('That has not happened yet. Pick today or earlier. What you wrote is still here.')
+    if (!text.trim()) return setMsg('Write what they said, then save.')
+    const payload = { date: day, text: text.trim().slice(0, MAX_PROMISE_TEXT), followThrough, flag: flag || null }
+    if (editing) store.updatePromise(person.id, editing.id, payload)
+    else store.addPromise(person.id, payload)
+    reset()
+  }
+
+  return (
+    <div>
+      {items.length === 0 && !open && (
+        <p className="hint" style={{ margin: '0 0 8px' }}>A promise, a plan they mentioned, or just something worth remembering, and whether they followed through.</p>
+      )}
+      {items.length > 0 && (
+        <ul className="notes" aria-label="Things they said">
+          {items.map((pr) => (
+            <li key={pr.id} style={{ alignItems: 'flex-start' }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <strong>{fmtDate(pr.date)}</strong>{pr.flag && <span className={'tag ' + pr.flag} style={{ marginLeft: 6 }}>{pr.flag === 'green' ? 'Green flag' : 'Red flag'}</span>}
+                <br />{pr.text}
+                <br /><span className={'tag' + (pr.followThrough === 'no' ? ' red' : pr.followThrough === 'yes' ? ' green' : pr.followThrough === 'partial' ? ' amber' : '')} style={{ marginTop: 4 }}>
+                  {FOLLOW_THROUGH.find((f) => f.id === pr.followThrough)?.label}
+                </span>
+                {' '}<button type="button" className="tl-link" onClick={() => startEdit(pr)}>Edit</button>
+              </span>
+              <button className="icon-btn" aria-label={`Remove: ${pr.text}`} onClick={() => store.deletePromise(person.id, pr.id)}><X size={16} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open ? (
+        <div className="stat" style={{ marginTop: 10 }}>
+          <h4>{editing ? 'Edit what they said' : 'Add something they said'}</h4>
+          <label className="field"><span>When they said it</span>
+            <input className="in" type="date" max={todayDay()} value={day} onChange={(e) => { setDay(e.target.value); setMsg('') }} /></label>
+          <label className="field"><span>What they said</span>
+            <textarea className="in" maxLength={MAX_PROMISE_TEXT} value={text} placeholder="Said he would introduce me to his friends this month."
+              {...errProps('promise-err', msg)} onChange={(e) => { setText(e.target.value); setMsg('') }} /></label>
+          <span className="lbl" style={{ marginTop: 10 }}>Did they follow through?</span>
+          <div className="tagpick" role="group" aria-label="Follow-through">
+            {FOLLOW_THROUGH.map((f) => (
+              <button key={f.id} type="button" className="plain" aria-pressed={followThrough === f.id} onClick={() => setFollowThrough(f.id)}>{f.label}</button>
+            ))}
+          </div>
+          <span className="lbl" style={{ marginTop: 10 }}>Flag it? (optional)</span>
+          <div className="tagpick" role="group" aria-label="Flag this">
+            {FLAG_PICK.map((f) => (
+              <button key={f.id} type="button" className={f.id} aria-pressed={flag === f.id} onClick={() => setFlag(flag === f.id ? '' : f.id)}>{f.label}</button>
+            ))}
+          </div>
+          <p className="hint" style={{ margin: '6px 0 0' }}>
+            A flagged one counts like any other green or red flag in Fit. Marking "did not follow through" counts against the score on its own, flag or not.
+          </p>
+          <FieldError id="promise-err" msg={msg} />
+          <div className="btnrow">
+            <button type="button" className="btn ghost" onClick={reset}>Cancel</button>
+            <button type="button" className="btn primary" onClick={save}>{editing ? 'Save changes' : 'Save'}</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="btn ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => setOpen(true)}><MessageSquareQuote size={18} /> Add something they said</button>
+      )}
     </div>
   )
 }

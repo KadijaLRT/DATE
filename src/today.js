@@ -1,5 +1,5 @@
 // Builds the Today screen from what is already stored. Pure: pass in "today" (YYYY-MM-DD) so it can be tested.
-import { plansOf, rememberOf, reflectionOf, momentsOf } from './fit.js'
+import { plansOf, rememberOf, reflectionOf, momentsOf, hangoutsOf } from './fit.js'
 import { buildTimeline } from './timeline.js'
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -67,6 +67,7 @@ export function activityDays(data) {
     if (!p || typeof p !== 'object') continue
     for (const c of Array.isArray(p.contacts) ? p.contacts : []) if (c && !/^matched$/i.test(String(c.note || '').trim())) add(c.date)
     for (const m of momentsOf(p)) add(m.date)
+    for (const h of hangoutsOf(p)) add(h.date)
   }
   for (const d of Array.isArray(data?.dates) ? data.dates : []) if (d && typeof d === 'object') add(d.date)
   return days

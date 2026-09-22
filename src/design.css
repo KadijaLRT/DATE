@@ -233,3 +233,8 @@ details[open] > :not(summary) { animation: fadeUp .18s ease-out; }
 .flagbar .tag .x { min-width: 44px; min-height: 44px; margin: -8px -10px -8px 0; }
 .story-stars { color: #8a5a00; }
 .status, .verdict .status { color: color-mix(in srgb, var(--edge, var(--stone)) 45%, #2b1b2e); }
+
+/* timeline colors for the newer entry kinds */
+.story-card.k-hangout { border-left-color: #6a8fb0; }
+.story-card.k-promise { border-left-color: #a86b3f; }
+.story-card.k-met { border-left-color: #a83258; background: #fdf5f8; }

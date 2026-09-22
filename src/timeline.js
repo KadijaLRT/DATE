@@ -1,7 +1,7 @@
 // Builds one chronological story out of what the app already stores: dates, contact, your own moments,
 // the match, and how a connection ended. Nothing is copied or duplicated; entries are derived every time.
 
-import { momentsOf, plansOf, reflectionOf, MOMENT_TYPES, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS } from './fit.js'
+import { momentsOf, hangoutsOf, promisesOf, plansOf, reflectionOf, MOMENT_TYPES, HANGOUT_TYPES, FOLLOW_THROUGH, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS } from './fit.js'
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const goodDay = (d) => typeof d === 'string' && DAY_RE.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z'))
@@ -19,12 +19,14 @@ export const GROUPS = {
   all: null,
   dates: ['date', 'plan'],
   contact: ['contact'],
-  moments: ['moment', 'matched', 'ended']
+  moments: ['moment', 'hangout', 'promise', 'matched', 'met', 'ended']
 }
 
 // Order within one day, newest-feeling first: how it ended, then dates, then your moments, then contact, then the match.
-const KIND_ORDER = { ended: 0, date: 1, plan: 1, moment: 2, contact: 3, matched: 4 }
+const KIND_ORDER = { ended: 0, date: 1, plan: 1, hangout: 2, moment: 2, promise: 2, contact: 3, matched: 4, met: 5 }
 const MOMENT_LABEL = Object.fromEntries(MOMENT_TYPES.map((t) => [t.id, t.label]))
+const HANGOUT_LABEL = Object.fromEntries(HANGOUT_TYPES.map((t) => [t.id, t.label]))
+const FOLLOW_THROUGH_LABEL = Object.fromEntries(FOLLOW_THROUGH.map((f) => [f.id, f.label]))
 
 export function buildTimeline(people, dates, opts = {}) {
   const { personId = null, group = 'all', includeArchived = false, endReasons = [] } = opts
@@ -72,6 +74,37 @@ export function buildTimeline(people, dates, opts = {}) {
       })
     }
 
+    for (const h of hangoutsOf(p)) {
+      add({
+        ...base,
+        key: `h:${p.id}:${h.id}`,
+        kind: 'hangout',
+        date: h.date,
+        title: HANGOUT_LABEL[h.type] || 'Time together',
+        hangoutType: h.type,
+        text: h.text,
+        feeling: h.feeling,
+        refId: h.id,
+        deletable: true
+      })
+    }
+
+    for (const pr of promisesOf(p)) {
+      add({
+        ...base,
+        key: `pr:${p.id}:${pr.id}`,
+        kind: 'promise',
+        date: pr.date,
+        title: 'Something they said',
+        text: pr.text,
+        followThrough: pr.followThrough,
+        followThroughLabel: FOLLOW_THROUGH_LABEL[pr.followThrough],
+        promiseFlag: pr.flag,
+        refId: pr.id,
+        deletable: true
+      })
+    }
+
     for (const pl of plansOf(p)) {
       add({
         ...base,
@@ -83,6 +116,18 @@ export function buildTimeline(people, dates, opts = {}) {
         remind: pl.remind,
         refId: pl.id,
         deletable: true
+      })
+    }
+
+    if (goodDay(p.metDate)) {
+      add({
+        ...base,
+        key: `met:${p.id}`,
+        kind: 'met',
+        date: p.metDate,
+        title: 'First met',
+        text: '',
+        deletable: false
       })
     }
 

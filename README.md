@@ -243,3 +243,13 @@ Data saved before this version loads unchanged. A stage that no longer exists, o
 **Forms.** The date form is grouped (The basics, My experience, Follow-up) with a Save button pinned to the bottom. Errors say what to fix and confirm nothing was lost, and are tied to their field for screen readers. Unfinished date, moment, and plan forms are saved on this device and offered back when you return (never restored without asking). Drafts expire after 7 days and can be cleared in Settings.
 
 **Accessibility.** Dialogs move focus in, keep Tab inside, close on Escape, and return focus to where you were. Muted text was darkened to meet 4.5:1 contrast, interactive targets are at least 44px, focus rings are always visible, and all motion switches off when your device asks for reduced motion.
+
+## Time together, first met, and things they said
+
+**Time together.** For time spent together that was not a formal date: a call, a walk, watching something, running an errand together. Log it from a profile with **Log time together**, pick a kind, and optionally say what you did and how it felt. It shows on the timeline, counts as activity on the week strip, and how often and how recently you spend time together feeds Fit (a criterion of its own, plus a standing signal alongside contact frequency).
+
+**First met.** A date field in the About section, separate from "How you met." It shows on the timeline as its own entry and is never counted as your last interaction.
+
+**Things they said.** A place on the profile, under Plans and reminders, for promises, plans they mentioned, or anything else worth remembering, whether or not they followed through. Each entry has the day they said it, the words, whether they followed through (too soon to tell, yes, no, or partly), and an optional green or red flag. A flagged entry counts in Fit like any other flag you add; marking one as not followed through counts against the score on its own, flag or not, and following through counts in its favor. Entries show on the timeline too, with the same tags.
+
+Both sections can be hidden per profile from Settings, and hiding one deletes nothing.

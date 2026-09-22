@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, plansOf, rememberOf, reflectionOf, TAGS } from './fit.js'
+import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, hangoutsOf, promisesOf, plansOf, rememberOf, reflectionOf, TAGS, validDay } from './fit.js'
 import { normalizeSettings } from './settings.js'
 import { cleanPhoto } from './photos.js'
 
@@ -126,6 +126,9 @@ export function migratePerson(p) {
     customFlags: customFlagsOf(rest),
     photo: cleanPhoto(rest.photo),
     moments: momentsOf(rest),
+    hangouts: hangoutsOf(rest),
+    promises: promisesOf(rest),
+    metDate: validDay(rest.metDate) ? rest.metDate : '',
     plans: plansOf(rest),
     remember: rememberOf({
       remember: [
@@ -181,7 +184,10 @@ export function useStore() {
       tags: [],
       customFlags: [],
       photo: '',
+      metDate: '',
       moments: [],
+      hangouts: [],
+      promises: [],
       plans: [],
       remember: [],
       notes: [],
@@ -267,6 +273,38 @@ export function useStore() {
       people: d.people.map((p) => (p.id === personId ? { ...p, moments: momentsOf(p).filter((m) => m.id !== momentId) } : p))
     }))
 
+  const addHangout = (personId, h) => {
+    notify('Time together saved')
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) =>
+        p.id === personId ? { ...p, hangouts: hangoutsOf({ hangouts: [...hangoutsOf(p), { id: uid(), ...h }] }) } : p
+      )
+    }))
+  }
+
+  const rawDeleteHangout = (personId, hangoutId) =>
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) => (p.id === personId ? { ...p, hangouts: hangoutsOf(p).filter((h) => h.id !== hangoutId) } : p))
+    }))
+
+  const addPromise = (personId, pr) => {
+    notify('Saved')
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) =>
+        p.id === personId ? { ...p, promises: promisesOf({ promises: [...promisesOf(p), { id: uid(), ...pr }] }) } : p
+      )
+    }))
+  }
+
+  const rawDeletePromise = (personId, promiseId) =>
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) => (p.id === personId ? { ...p, promises: promisesOf(p).filter((pr) => pr.id !== promiseId) } : p))
+    }))
+
   const rawDeleteContact = (personId, contactId) =>
     setData((d) => ({
       ...d,
@@ -306,6 +344,8 @@ export function useStore() {
   const deleteDate = (id) => undoable('Date deleted', () => rawDeleteDate(id))
   const deleteContact = (personId, contactId) => undoable('Contact deleted', () => rawDeleteContact(personId, contactId))
   const deleteMoment = (personId, momentId) => undoable('Moment deleted', () => rawDeleteMoment(personId, momentId))
+  const deleteHangout = (personId, hangoutId) => undoable('Time together deleted', () => rawDeleteHangout(personId, hangoutId))
+  const deletePromise = (personId, promiseId) => undoable('Removed', () => rawDeletePromise(personId, promiseId))
   const eraseEverything = () => undoable('Everything erased', () => setData({ ...empty, settings: dataRef.current.settings }))
 
   const patchPerson = (id, fn) =>
@@ -313,6 +353,10 @@ export function useStore() {
 
   const updateMoment = (personId, momentId, patch) =>
     patchPerson(personId, (p) => ({ moments: momentsOf({ moments: momentsOf(p).map((m) => (m.id === momentId ? { ...m, ...patch } : m)) }) }))
+  const updateHangout = (personId, hangoutId, patch) =>
+    patchPerson(personId, (p) => ({ hangouts: hangoutsOf({ hangouts: hangoutsOf(p).map((h) => (h.id === hangoutId ? { ...h, ...patch } : h)) }) }))
+  const updatePromise = (personId, promiseId, patch) =>
+    patchPerson(personId, (p) => ({ promises: promisesOf({ promises: promisesOf(p).map((pr) => (pr.id === promiseId ? { ...pr, ...patch } : pr)) }) }))
 
   const addPlan = (personId, plan) => {
     patchPerson(personId, (p) => ({ plans: plansOf({ plans: [...plansOf(p), { id: uid(), ...plan }] }) }))
@@ -376,6 +420,12 @@ export function useStore() {
     logTalked,
     deleteContact,
     addMoment,
+    addHangout,
+    updateHangout,
+    deleteHangout,
+    addPromise,
+    updatePromise,
+    deletePromise,
     deleteMoment,
     updateMoment,
     addPlan,
