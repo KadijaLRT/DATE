@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, hangoutsOf, promisesOf, plansOf, rememberOf, reflectionOf, TAGS, validDay } from './fit.js'
+import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, hangoutsOf, promisesOf, pointEventsOf, plansOf, rememberOf, reflectionOf, TAGS, validDay } from './fit.js'
 import { normalizeSettings } from './settings.js'
 import { cleanPhoto } from './photos.js'
 
@@ -128,7 +128,9 @@ export function migratePerson(p) {
     moments: momentsOf(rest),
     hangouts: hangoutsOf(rest),
     promises: promisesOf(rest),
+    pointEvents: pointEventsOf(rest),
     metDate: validDay(rest.metDate) ? rest.metDate : '',
+    relationshipStartDate: validDay(rest.relationshipStartDate) ? rest.relationshipStartDate : '',
     plans: plansOf(rest),
     remember: rememberOf({
       remember: [
@@ -185,9 +187,11 @@ export function useStore() {
       customFlags: [],
       photo: '',
       metDate: '',
+      relationshipStartDate: '',
       moments: [],
       hangouts: [],
       promises: [],
+      pointEvents: [],
       plans: [],
       remember: [],
       notes: [],
@@ -218,7 +222,10 @@ export function useStore() {
             }
           }
         }
-        return { ...p, status, end: null }
+        // Auto-suggest a relationship-start date the first time someone reaches Dating; never overwrite a date
+        // already set, and never invent one for any other stage.
+        const suggestStart = status === 'dating' && !p.relationshipStartDate
+        return { ...p, status, end: null, relationshipStartDate: suggestStart ? todayDay() : p.relationshipStartDate }
       })
     }))
 
@@ -305,6 +312,27 @@ export function useStore() {
       people: d.people.map((p) => (p.id === personId ? { ...p, promises: promisesOf(p).filter((pr) => pr.id !== promiseId) } : p))
     }))
 
+  // Point events are append-only: a tapped chip logs one; nothing is ever edited in place, only added or removed.
+  // One call can log several at once, since a single date or hangout often earns more than one tag.
+  const addPointEvents = (personId, entries) => {
+    if (!entries.length) return
+    notify(entries.length === 1 ? 'Logged' : `Logged ${entries.length} events`)
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) =>
+        p.id === personId
+          ? { ...p, pointEvents: pointEventsOf({ pointEvents: [...pointEventsOf(p), ...entries.map((e) => ({ id: uid(), ...e }))] }) }
+          : p
+      )
+    }))
+  }
+
+  const rawDeletePointEvent = (personId, eventId) =>
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) => (p.id === personId ? { ...p, pointEvents: pointEventsOf(p).filter((e) => e.id !== eventId) } : p))
+    }))
+
   const rawDeleteContact = (personId, contactId) =>
     setData((d) => ({
       ...d,
@@ -346,6 +374,7 @@ export function useStore() {
   const deleteMoment = (personId, momentId) => undoable('Moment deleted', () => rawDeleteMoment(personId, momentId))
   const deleteHangout = (personId, hangoutId) => undoable('Time together deleted', () => rawDeleteHangout(personId, hangoutId))
   const deletePromise = (personId, promiseId) => undoable('Removed', () => rawDeletePromise(personId, promiseId))
+  const deletePointEvent = (personId, eventId) => undoable('Point event removed', () => rawDeletePointEvent(personId, eventId))
   const eraseEverything = () => undoable('Everything erased', () => setData({ ...empty, settings: dataRef.current.settings }))
 
   const patchPerson = (id, fn) =>
@@ -426,6 +455,8 @@ export function useStore() {
     addPromise,
     updatePromise,
     deletePromise,
+    addPointEvents,
+    deletePointEvent,
     deleteMoment,
     updateMoment,
     addPlan,

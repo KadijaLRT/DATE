@@ -19,11 +19,11 @@ export const GROUPS = {
   all: null,
   dates: ['date', 'plan'],
   contact: ['contact'],
-  moments: ['moment', 'hangout', 'promise', 'matched', 'met', 'ended']
+  moments: ['moment', 'hangout', 'promise', 'matched', 'met', 'startdate', 'ended']
 }
 
 // Order within one day, newest-feeling first: how it ended, then dates, then your moments, then contact, then the match.
-const KIND_ORDER = { ended: 0, date: 1, plan: 1, hangout: 2, moment: 2, promise: 2, contact: 3, matched: 4, met: 5 }
+const KIND_ORDER = { ended: 0, date: 1, plan: 1, hangout: 2, moment: 2, promise: 2, contact: 3, matched: 4, met: 5, startdate: 5 }
 const MOMENT_LABEL = Object.fromEntries(MOMENT_TYPES.map((t) => [t.id, t.label]))
 const HANGOUT_LABEL = Object.fromEntries(HANGOUT_TYPES.map((t) => [t.id, t.label]))
 const FOLLOW_THROUGH_LABEL = Object.fromEntries(FOLLOW_THROUGH.map((f) => [f.id, f.label]))
@@ -126,6 +126,18 @@ export function buildTimeline(people, dates, opts = {}) {
         kind: 'met',
         date: p.metDate,
         title: 'First met',
+        text: '',
+        deletable: false
+      })
+    }
+
+    if (goodDay(p.relationshipStartDate)) {
+      add({
+        ...base,
+        key: `startdate:${p.id}`,
+        kind: 'startdate',
+        date: p.relationshipStartDate,
+        title: 'Started dating',
         text: '',
         deletable: false
       })

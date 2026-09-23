@@ -3,7 +3,7 @@ import {
   Users, CalendarHeart, BarChart3, Plus, X, Mic, Square,
   Star, Trash2, Archive, ArchiveRestore, Download, Upload, Scale,
   MessageCircle, Sparkles, Heart, Flag, History, Settings as SettingsIcon, Lock, Undo2, Bell, CalendarClock,
-  Camera, LayoutGrid, User, Check, ChevronRight, Users2, MapPin, MessageSquareQuote
+  Camera, LayoutGrid, User, Check, ChevronRight, Users2, MapPin, MessageSquareQuote, HeartHandshake
 } from 'lucide-react'
 import {
   useStore, uid, STATUSES, ACTIVE_STATUSES, END_REASONS, isActive, TAGS, agoLabel, daysSince, fmtDate, lastContactOf, todayDay
@@ -18,7 +18,7 @@ import { LOCK_CHOICES } from './settings.js'
 import { hasPin, setPin, verifyPin, clearPin, waitLeft, recordFail, resetFails, PIN_RE } from './lock.js'
 import { PROMPT_CATEGORIES, candidates as promptCandidates, usedPromptIds } from './prompts.js'
 import { encryptBackup, decryptBackup, isEncryptedBackup, MIN_PASSPHRASE } from './vault.js'
-import { plansOf, rememberOf, reflectionOf, REMEMBER_KINDS, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS, MAX_PLAN_TEXT, MAX_REMEMBER_TEXT, MAX_REFLECTION_NOTE, MAX_REFLECTION_JOURNAL, momentsOf, hangoutsOf, promisesOf, FEELINGS, MOMENT_TYPES, HANGOUT_TYPES, FOLLOW_THROUGH, MAX_MOMENT_TEXT, MAX_HANGOUT_TEXT, MAX_PROMISE_TEXT, customFlagsOf, MAX_CUSTOM_FLAGS, MAX_FLAG_LENGTH, TRAITS, WANT_LEVELS, AVOID_LEVELS, VERDICT, SOFT_PENALTY, evaluate, hasCriteria, normalizeCriteria, splitWords, wordHits } from './fit.js'
+import { plansOf, rememberOf, reflectionOf, REMEMBER_KINDS, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS, MAX_PLAN_TEXT, MAX_REMEMBER_TEXT, MAX_REFLECTION_NOTE, MAX_REFLECTION_JOURNAL, momentsOf, hangoutsOf, promisesOf, pointEventsOf, pointScoreOf, POINT_EVENTS, tierFor, FEELINGS, MOMENT_TYPES, HANGOUT_TYPES, FOLLOW_THROUGH, MAX_MOMENT_TEXT, MAX_HANGOUT_TEXT, MAX_PROMISE_TEXT, customFlagsOf, MAX_CUSTOM_FLAGS, MAX_FLAG_LENGTH, TRAITS, WANT_LEVELS, AVOID_LEVELS, VERDICT, SOFT_PENALTY, evaluate, hasCriteria, normalizeCriteria, splitWords, wordHits } from './fit.js'
 import { buildModel, adjustedWeight, MIN_FEEDBACK } from './learn.js'
 import { parseDescription } from './describe.js'
 
@@ -359,8 +359,8 @@ function QuickAdd({ onSave, onClose }) {
 
 /* ---------- timeline ---------- */
 
-const KIND_ICON = { date: CalendarHeart, contact: MessageCircle, moment: Sparkles, hangout: Users2, promise: MessageSquareQuote, matched: Heart, met: MapPin, ended: Flag, plan: CalendarClock }
-const KIND_LABEL = { date: 'Date', contact: 'In touch', matched: 'Matched', met: 'First met', ended: 'Let go', plan: 'Planned' }
+const KIND_ICON = { date: CalendarHeart, contact: MessageCircle, moment: Sparkles, hangout: Users2, promise: MessageSquareQuote, matched: Heart, met: MapPin, startdate: HeartHandshake, ended: Flag, plan: CalendarClock }
+const KIND_LABEL = { date: 'Date', contact: 'In touch', matched: 'Matched', met: 'First met', startdate: 'Started dating', ended: 'Let go', plan: 'Planned' }
 const FEEL_LABEL = Object.fromEntries(FEELINGS.map((f) => [f.id, f.label]))
 const FEEL_CLASS = { great: 'green', good: 'green', okay: 'plain', uneasy: 'amber', rough: 'red' }
 
@@ -496,19 +496,121 @@ function AddMoment({ onAdd, onCancel, initial = null, draftKey = null }) {
   )
 }
 
+const POINT_GROUPS = [
+  { id: 'effort', label: 'Effort & consistency' },
+  { id: 'vibe', label: 'Vibe & compatibility' },
+  { id: 'red', label: 'Red flags' }
+]
+
+// A tappable, multi-select grid of point events, grouped the way the scoring model groups them. Selecting a chip
+// stages it; nothing is logged until Save. Used inline on the date and hangout forms, and standalone from a profile.
+function PointEventPicker({ selected, onToggle }) {
+  return (
+    <div className="points-pick">
+      {POINT_GROUPS.map((g) => (
+        <div key={g.id} className={'ptgroup pt-' + g.id}>
+          <span className="lbl">{g.label}</span>
+          <div className="tagpick" role="group" aria-label={g.label}>
+            {POINT_EVENTS.filter((e) => e.group === g.id).map((e) => (
+              <button
+                key={e.id}
+                type="button"
+                className={g.id === 'red' ? 'red' : 'green'}
+                aria-pressed={selected.includes(e.id)}
+                onClick={() => onToggle(e.id)}
+              >
+                {e.label} <span className="ptpts">{e.points > 0 ? '+' : ''}{e.points}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Standalone logging from a profile: pick any number of events, any day, save them all as one batch.
+function LogPoints({ onSave, onCancel }) {
+  const [day, setDay] = useState(todayDay())
+  const [picked, setPicked] = useState([])
+  const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
+  const total = picked.reduce((sum, id) => sum + (POINT_EVENTS.find((e) => e.id === id)?.points || 0), 0)
+  return (
+    <div className="stat" style={{ marginTop: 10 }}>
+      <h4>Log points</h4>
+      <label className="field">
+        <span>Day</span>
+        <input className="in" type="date" aria-label="Point event day" max={todayDay()} value={day} onChange={(e) => setDay(e.target.value)} />
+      </label>
+      <PointEventPicker selected={picked} onToggle={toggle} />
+      {picked.length > 0 && (
+        <p className="hint" style={{ margin: '8px 0 0' }}>{picked.length} selected, {total > 0 ? '+' : ''}{total} points.</p>
+      )}
+      <div className="btnrow">
+        <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={picked.length === 0}
+          onClick={() => onSave(picked.map((kind) => ({ date: day, kind })))}
+        >
+          Save{picked.length ? ` (${picked.length})` : ''}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// The running history: every logged point event, most recent first, grouped by day. Deleting one is undoable,
+// same as anything else in the app.
+function PointLog({ person, store }) {
+  const events = pointEventsOf(person).slice().sort((a, b) => b.date.localeCompare(a.date))
+  if (!events.length) return null
+  const groups = []
+  for (const e of events) {
+    const g = groups[groups.length - 1]
+    if (g && g.date === e.date) g.items.push(e)
+    else groups.push({ date: e.date, items: [e] })
+  }
+  return (
+    <div style={{ marginTop: 14 }}>
+      <span className="lbl">Point log</span>
+      <ul className="notes" aria-label="Point events">
+        {groups.map((g) => (
+          <li key={g.date} style={{ alignItems: 'flex-start', flexDirection: 'column' }}>
+            <strong>{fmtDate(g.date)}</strong>
+            <div className="mini" style={{ marginTop: 4 }}>
+              {g.items.map((e) => (
+                <span key={e.id} className={'tag ptlog ' + (e.points >= 0 ? 'green' : 'red')}>
+                  {e.label} {e.points > 0 ? '+' : ''}{e.points}
+                  <button type="button" className="ptlog-x" aria-label={`Remove: ${e.label} on ${fmtDate(g.date)}`} onClick={() => store.deletePointEvent(person.id, e.id)}>
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function AddHangout({ onAdd, onCancel, initial = null, draftKey = null }) {
   const [type, setType] = useState(initial?.hangoutType || 'inperson')
   const [day, setDay] = useState(initial?.date || todayDay())
   const [text, setText] = useState(initial?.text || '')
   const [feeling, setFeeling] = useState(initial?.feeling || '')
+  const [points, setPoints] = useState([])
   const [msg, setMsg] = useState('')
   const speech = useSpeech((t) => setText((cur) => (cur ? cur + ' ' : '') + t))
   const draft = useDraft(draftKey || 'hangout:none', { type, date: day, text, feeling }, Boolean(draftKey) && !initial)
+  const togglePoint = (id) => setPoints((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
 
   const save = () => {
     if (!day) return setMsg('Pick the day this happened. What you wrote is still here.')
     if (day > todayDay()) return setMsg('That day has not happened yet. Pick today or earlier, or use Plan a date for something ahead. What you wrote is still here.')
-    onAdd({ date: day, type, text: text.trim().slice(0, MAX_HANGOUT_TEXT), feeling: feeling || null })
+    onAdd({ date: day, type, text: text.trim().slice(0, MAX_HANGOUT_TEXT), feeling: feeling || null }, points.map((kind) => ({ date: day, kind })))
     draft.done()
   }
   const restore = () => { const d = draft.take(); if (d) { setType(d.type); setDay(d.date || day); setText(d.text); setFeeling(d.feeling) } }
@@ -547,8 +649,14 @@ function AddHangout({ onAdd, onCancel, initial = null, draftKey = null }) {
         ))}
       </div>
       <p className="hint" style={{ margin: '6px 0 0' }}>
-        Counts toward Fit: how often and how recently you spend time together, and, if you say how it felt, alongside your moment feelings, up to 4 points either way.
+        How it felt joins your moment feelings in the criteria baseline, up to 8 points either way. Anything worth tapping below adds to the running score.
       </p>
+      {!initial && (
+        <>
+          <span className="lbl" style={{ marginTop: 12 }}>Anything worth logging? (optional)</span>
+          <PointEventPicker selected={points} onToggle={togglePoint} />
+        </>
+      )}
       <FieldError id="hangout-err" msg={msg} />
       <div className="btnrow">
         <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
@@ -746,10 +854,12 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
 
   const talkedToday = (person.contacts || []).some((c) => c.date === today && !/^matched$/i.test((c.note || '').trim()))
   const next = plansOf(person).filter((x) => x.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0]
-  const last = buildTimeline([person], dates, { personId: person.id }).find((e) => e.kind !== 'plan' && e.kind !== 'matched' && e.kind !== 'met' && e.date && e.date <= today)
+  const last = buildTimeline([person], dates, { personId: person.id }).find((e) => e.kind !== 'plan' && e.kind !== 'matched' && e.kind !== 'met' && e.kind !== 'startdate' && e.date && e.date <= today)
   const highlight = [...momentsOf(person), ...hangoutsOf(person)].filter((m) => m.text).sort((a, b) => b.date.localeCompare(a.date))[0]?.text || rememberOf(person).find((r) => !r.done)?.text
   const details = [person.age && `${person.age}`, person.job, person.location, person.met && `via ${person.met}`].filter(Boolean).join(' · ')
   const fit = useMemo(() => (hasCriteria(store.data.criteria) ? evaluate(person, dates, store.data.criteria, null) : null), [person, dates, store.data.criteria])
+  const score = pointScoreOf(person)
+  const tier = tierFor(score)
 
   const sections = [
     { id: 'about', label: 'About', on: true },
@@ -787,6 +897,7 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
         </div>
         <div className="phero-main">
           <span className="ppill inline">{s.label}</span>
+          {' '}<span className={'ptier ' + tier.color}>{tier.label} ({score > 0 ? '+' : ''}{score})</span>
           {details && <p className="hint" style={{ margin: '8px 0 0' }}>{details}</p>}
           {person.photo && <button type="button" className="tl-link" onClick={() => set({ photo: '' })}>Remove photo</button>}
         </div>
@@ -804,6 +915,9 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
         )}
         {show.timeline && (
           <button className="btn ghost" onClick={() => { setAdding('hangout'); setEditMoment(null); setTimeout(() => goTo('timeline'), 0) }}><Users2 size={18} /> Log time together</button>
+        )}
+        {show.timeline && (
+          <button className="btn ghost" onClick={() => { setAdding('points'); setEditMoment(null); setTimeout(() => goTo('timeline'), 0) }}><Scale size={18} /> Log points</button>
         )}
       </div>
 
@@ -858,6 +972,11 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
               <input className="in" type="date" aria-label="First met" max={todayDay()} value={person.metDate} onChange={(e) => set({ metDate: e.target.value })} />
             </label>
           </div>
+          <label className="field">
+            <span>Started dating</span>
+            <input className="in" type="date" aria-label="Started dating" max={todayDay()} value={person.relationshipStartDate} onChange={(e) => set({ relationshipStartDate: e.target.value })} />
+          </label>
+          {person.relationshipStartDate && <p className="hint" style={{ margin: '-8px 0 16px' }}>Suggested automatically when a profile first reaches Dating; change or clear it any time.</p>}
           {show.flags && (
             <>
               <div className="section">Green and red flags</div>
@@ -920,15 +1039,21 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
           <summary>Timeline</summary>
           <div className="pcontent">
             <ContactLog person={person} dates={dates} store={store} hideTalked />
-            {(adding === 'hangout' || editMoment?.kind === 'hangout') ? (
+            {adding === 'points' ? (
+              <LogPoints
+                onCancel={() => setAdding(false)}
+                onSave={(entries) => { store.addPointEvents(person.id, entries); setAdding(false) }}
+              />
+            ) : (adding === 'hangout' || editMoment?.kind === 'hangout') ? (
               <AddHangout
                 key={editMoment?.refId || 'new-hangout'}
                 initial={editMoment}
                 draftKey={'hangout:' + person.id}
                 onCancel={() => { setAdding(false); setEditMoment(null) }}
-                onAdd={(h) => {
+                onAdd={(h, pts) => {
                   if (editMoment) store.updateHangout(person.id, editMoment.refId, h)
                   else store.addHangout(person.id, h)
+                  if (pts?.length) store.addPointEvents(person.id, pts)
                   setAdding(false); setEditMoment(null)
                 }}
               />
@@ -945,6 +1070,7 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
                 }}
               />
             ) : null}
+            <PointLog person={person} store={store} />
             <div style={{ marginTop: 14 }}>
               <TimelineList
                 entries={buildTimeline([person], dates, { personId: person.id, endReasons: END_REASONS })}
@@ -992,6 +1118,8 @@ function DateSheet({ people, initial, defaultPersonId, store, onClose, onCheckin
   const [refl, setRefl] = useState(() => reflectionOf(initial) || {})
   const [showRefl, setShowRefl] = useState(Boolean(openReflection || reflectionOf(initial)))
   const [errors, setErrors] = useState({})
+  const [points, setPoints] = useState([])
+  const togglePoint = (id) => setPoints((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
   const draft = useDraft('date', { personId, date, activity, rating, followUp, impressions, reflection: refl }, !editing)
 
   const restore = () => {
@@ -1017,6 +1145,7 @@ function DateSheet({ people, initial, defaultPersonId, store, onClose, onCheckin
     } else {
       draft.done()
       const newId = store.addDate(payload)
+      if (points.length) store.addPointEvents(personId, points.map((kind) => ({ date, kind })))
       if (onCheckin && rating > 0) onCheckin(personId, newId)
       else onClose()
     }
@@ -1112,6 +1241,14 @@ function DateSheet({ people, initial, defaultPersonId, store, onClose, onCheckin
         )}
       </fieldset>
 
+      {!editing && (
+        <fieldset className="fgroup">
+          <legend>Points</legend>
+          <p className="hint" style={{ margin: '0 0 10px' }}>Tap anything that applies. These add to their running score; nothing here affects this form's other fields.</p>
+          <PointEventPicker selected={points} onToggle={togglePoint} />
+        </fieldset>
+      )}
+
       <fieldset className="fgroup">
         <legend>Follow-up</legend>
         <label className="field">
@@ -1203,12 +1340,17 @@ function PersonCard({ p, dates, onOpen, store, card, view = 'card' }) {
   const shown = [...g.slice(0, 2), ...r.slice(0, 2)]
   const hasPhoto = Boolean(p.photo) && card.photos
   const name = p.name || 'Unnamed'
+  const score = pointScoreOf(p)
+  const tier = tierFor(score)
   return (
     // The whole card opens the profile for mouse and touch; the name is the real button for keyboard and screen readers.
     <article className={'person' + (hasPhoto ? ' has-photo' : '') + (ended ? ' ended' : '')} style={{ '--edge': s.color, '--tint': tintFor(p.id) }} onClick={() => onOpen(p.id)}>
       <div className="pphoto">
         {hasPhoto ? <img src={p.photo} alt="" /> : <span className="pinit" aria-hidden="true">{initialsOf(p.name)}</span>}
         <span className="ppill">{s.label}</span>
+        {card.score !== false && pointEventsOf(p).length > 0 && (
+          <span className={'ptier-badge ' + tier.color}>{score > 0 ? '+' : ''}{score}</span>
+        )}
         {!ended && (
           <button
             type="button"
@@ -2190,23 +2332,23 @@ function Fit({ data, store, onOpen }) {
             <div key={p.id} className="verdict" style={{ '--edge': `var(--${v.tone})` }}>
               <div className="row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
                 <h3 style={{ fontFamily: 'var(--display)', fontSize: 21, margin: 0 }}>{p.name || 'Unnamed'}</h3>
-                <span className="status">{v.label}</span>
+                <span className={'ptier ' + r.tier.color}>{r.tier.label} ({r.score > 0 ? '+' : ''}{r.score})</span>
               </div>
               <div className="meta" style={{ color: 'var(--stone)', fontSize: 13, marginTop: 2 }}>
-                Fit {r.score} of 100 · {r.confidence} confidence · {r.dateCount} date{r.dateCount === 1 ? '' : 's'} logged
+                {v.label} · criteria match {r.criteriaScore} of 100 · {r.confidence} confidence · {r.dateCount} date{r.dateCount === 1 ? '' : 's'} logged · {r.pointEvents.length} point event{r.pointEvents.length === 1 ? '' : 's'}
               </div>
               <details className="fold">
               <summary>Why this call</summary>
               <FlagList flags={r.flags} />
               {r.penalty > 0 && (
                 <p className="hint" style={{ margin: '4px 0 0' }}>
-                  "Would rather not" flags lowered the score from {r.baseScore} to {r.score}.
+                  "Would rather not" flags lowered the criteria match from {r.baseScore} to {r.criteriaScore}.
                 </p>
               )}
               <FitParts r={r} />
               {r.confidence === 'low' && (
                 <p className="hint" style={{ margin: '4px 0 8px' }}>
-                  Low confidence: log more dates, tags, and notes for a more reliable call.
+                  Low confidence: log more point events, dates, tags, and notes for a more reliable call.
                 </p>
               )}
               {r.adjustments.length > 0 && (
@@ -2935,14 +3077,19 @@ function PatternsCard({ data }) {
 // Four honest parts instead of one list: what fits, how much we know, what is unexplored, and how it has felt.
 function FitParts({ r }) {
   const pick = (sec) => r.reasons.filter((x) => !x.dup && x.section === sec)
+  const pts = pick('points')
   const comp = pick('compatibility')
   const exp = pick('experience')
   const ev = r.evidence
-  const bits = [[ev.dates, 'date'], [ev.reflections, 'reflection'], [ev.notes, 'note'], [ev.contacts, 'contact'], [ev.moments, 'moment'], [ev.flags, 'flag'], [ev.plans, 'plan'], [ev.remembered, 'remembered detail']]
+  const bits = [[ev.dates, 'date'], [ev.pointEvents, 'point event'], [ev.reflections, 'reflection'], [ev.notes, 'note'], [ev.contacts, 'contact'], [ev.moments, 'moment'], [ev.flags, 'flag'], [ev.plans, 'plan'], [ev.remembered, 'remembered detail']]
     .filter(([n]) => n > 0)
     .map(([n, w]) => `${n} ${w}${n === 1 ? '' : 's'}`)
   return (
     <div className="fitparts">
+      <section aria-label="Point events">
+        <h5>Point events</h5>
+        {pts.length ? <ul className="why">{pts.map((x, i) => <li key={i} className={x.kind}>{x.text}</li>)}</ul> : <p className="hint">Nothing tapped yet. Log an event from a date or hangout, or from their profile directly.</p>}
+      </section>
       <section aria-label="Compatibility">
         <h5>Compatibility</h5>
         {comp.length ? <ul className="why">{comp.slice(0, 6).map((x, i) => <li key={i} className={x.kind}>{x.text}</li>)}</ul> : <p className="hint">Nothing to compare yet.</p>}

@@ -238,3 +238,23 @@ details[open] > :not(summary) { animation: fadeUp .18s ease-out; }
 .story-card.k-hangout { border-left-color: #6a8fb0; }
 .story-card.k-promise { border-left-color: #a86b3f; }
 .story-card.k-met { border-left-color: #a83258; background: #fdf5f8; }
+.story-card.k-startdate { border-left-color: #2b8a5e; background: #f4fbf6; }
+
+/* ---------- point events: picker, tier badges, log ---------- */
+.points-pick { display: flex; flex-direction: column; gap: var(--s3); margin: var(--s2) 0; }
+.ptgroup .lbl { margin-bottom: var(--s1); }
+.ptgroup.pt-red .tagpick button[aria-pressed='true'] { background: var(--red-soft); border-color: var(--rose); color: #8d2846; }
+.ptpts { font-weight: 700; opacity: 0.75; margin-left: 2px; }
+
+.ptier { display: inline-flex; align-items: center; min-height: 26px; padding: var(--s1) var(--s3); border-radius: 999px; font-size: var(--fs-meta); font-weight: 700; }
+.ptier.green { background: var(--sage-tint); color: #2b5638; }
+.ptier.blue { background: #dce8f5; color: #234d78; }
+.ptier.orange { background: #fdeccb; color: #7a5200; }
+.ptier.red { background: var(--red-soft); color: #8d2846; }
+
+.ptier-badge { position: absolute; left: var(--s4); bottom: 82px; z-index: 2; background: #fff; color: #2b1b2e; border: 1.5px solid #0d0d0d; border-radius: var(--r-sm); padding: 4px var(--s3); font-weight: 700; font-size: 12px; line-height: 1; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); }
+.people-grid .ptier-badge { left: var(--s2); bottom: 72px; padding: 3px var(--s2); font-size: 11px; }
+
+.tag.ptlog { position: relative; padding-right: 28px; }
+.ptlog-x { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); min-width: 22px; min-height: 22px; display: inline-grid; place-items: center; border-radius: 50%; color: inherit; opacity: 0.7; }
+.ptlog-x:hover, .ptlog-x:focus-visible { opacity: 1; }

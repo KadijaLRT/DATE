@@ -253,3 +253,19 @@ Data saved before this version loads unchanged. A stage that no longer exists, o
 **Things they said.** A place on the profile, under Plans and reminders, for promises, plans they mentioned, or anything else worth remembering, whether or not they followed through. Each entry has the day they said it, the words, whether they followed through (too soon to tell, yes, no, or partly), and an optional green or red flag. A flagged entry counts in Fit like any other flag you add; marking one as not followed through counts against the score on its own, flag or not, and following through counts in its favor. Entries show on the timeline too, with the same tags.
 
 Both sections can be hidden per profile from Settings, and hiding one deletes nothing.
+
+## Scoring: point events
+
+Fit's score is now a running, all-time point total, not a percentage. Tap point events from a date, from logging time together, or directly from a profile with **Log points**:
+
+**Effort & consistency:** initiated contact or made plans (+5), remembered a small detail (+5), on time (+5), respected a boundary immediately (+10), clear communication (+10), put thought into a plan (+5) or a thoughtful one (+10).
+
+**Vibe & compatibility:** conversation flowed (+5), shared core values came up (+10), chemistry (+5), made you laugh (+5).
+
+**Red flags:** late without notice (-5), cancelled last-minute (-10), hot-and-cold (-5), rude to staff (-15), talked about an ex (-10), crossed a boundary (-20), lied or a major inconsistency (-25).
+
+Every tap adds to the running total, unbounded in both directions, with no decay: **35+ is High Potential, 15 to 34 is Exploring, 0 to 14 is Low Priority, below 0 is Pass**. A red line dealbreaker still forces Pass regardless of points. The score and tier show as a badge on person cards (once something is logged), on the profile header, and in the Fit tab.
+
+Your criteria (must-haves, nice-to-haves, dealbreakers) still work as before and set a separate "criteria match" baseline: date ratings, moment and hangout feelings, and whether promises were kept still feed it. That baseline never drives the verdict on its own anymore; the point log does.
+
+Every point event is kept in a dated log on the profile's Timeline, and can be removed (undoable) at any time.

@@ -156,6 +156,71 @@ export const MAX_PROMISES = 100
 export const MAX_PROMISE_TEXT = 300
 const FOLLOW_THROUGH_IDS = new Set(FOLLOW_THROUGH.map((f) => f.id))
 
+/**
+ * Point events: quick-tap, discrete moments worth points, on their own or attached to a date/hangout. This is the
+ * whole of the running score beyond the criteria baseline (dealbreakers, wants/avoids) below: no decay, no confidence
+ * weighting, just a running total of everything you have tapped, all-time.
+ */
+export const POINT_EVENTS = [
+  // Effort & consistency
+  { id: 'initiates', label: 'Initiated contact or made plans', points: 5, group: 'effort' },
+  { id: 'remembers', label: 'Remembered a small detail', points: 5, group: 'effort' },
+  { id: 'on_time', label: 'On time, respected your schedule', points: 5, group: 'effort' },
+  { id: 'boundary_respected', label: 'Respected a boundary immediately', points: 10, group: 'effort' },
+  { id: 'clear_comm', label: 'Clear, direct communication', points: 10, group: 'effort' },
+  { id: 'plan_decent', label: 'Put some thought into the plan', points: 5, group: 'effort' },
+  { id: 'plan_great', label: 'Thoughtful, well-planned activity', points: 10, group: 'effort' },
+  // Vibe & compatibility
+  { id: 'flowing_convo', label: 'Conversation flowed easily', points: 5, group: 'vibe' },
+  { id: 'shared_values', label: 'Shared core values or priorities came up', points: 10, group: 'vibe' },
+  { id: 'chemistry', label: 'Physical or emotional chemistry', points: 5, group: 'vibe' },
+  { id: 'made_laugh', label: 'Made you laugh, felt at ease', points: 5, group: 'vibe' },
+  // Red flags & disrespect
+  { id: 'late_no_notice', label: 'Late without notice or apology', points: -5, group: 'red' },
+  { id: 'cancelled', label: 'Cancelled last-minute, no reschedule', points: -10, group: 'red' },
+  { id: 'hot_cold', label: 'Inconsistent, hot-and-cold', points: -5, group: 'red' },
+  { id: 'rude_staff', label: 'Rude to service staff or others', points: -15, group: 'red' },
+  { id: 'ex_talk', label: 'Talked constantly about an ex', points: -10, group: 'red' },
+  { id: 'boundary_crossed', label: 'Crossed a boundary, pushy', points: -20, group: 'red' },
+  { id: 'lied', label: 'Lying or a major inconsistency', points: -25, group: 'red' }
+]
+export const MAX_POINT_EVENTS = 500
+const POINT_EVENT_MAP = Object.fromEntries(POINT_EVENTS.map((e) => [e.id, e]))
+
+export function pointEventsOf(person) {
+  const raw = Array.isArray(person?.pointEvents) ? person.pointEvents : []
+  const out = []
+  const seen = new Set()
+  raw.forEach((ev, i) => {
+    if (!ev || typeof ev !== 'object' || !POINT_EVENT_MAP[ev.kind] || !validDay(ev.date)) return
+    let id = typeof ev.id === 'string' && ev.id ? ev.id : `pe-${i}`
+    while (seen.has(id)) id += '_'
+    seen.add(id)
+    out.push({ id, date: ev.date, kind: ev.kind, points: POINT_EVENT_MAP[ev.kind].points, label: POINT_EVENT_MAP[ev.kind].label })
+  })
+  return out.slice(0, MAX_POINT_EVENTS)
+}
+
+// The running, all-time total: unbounded in both directions, no decay, no confidence weighting.
+export function pointScoreOf(person) {
+  return pointEventsOf(person).reduce((sum, ev) => sum + ev.points, 0)
+}
+
+export const SCORE_TIERS = [
+  { id: 'high', label: 'High Potential', min: 35, color: 'green', hint: 'Great energy, high effort, zero red flags. Worth prioritizing.' },
+  { id: 'exploring', label: 'Exploring', min: 15, color: 'blue', hint: 'Solid interaction, but needs more time or consistency.' },
+  { id: 'low', label: 'Low Priority', min: 0, color: 'orange', hint: 'Mixed signals or minimal effort. Do not go out of your way.' },
+  { id: 'pass', label: 'Pass / Red Flag', min: -Infinity, color: 'red', hint: 'Red flags outpace the good. Cut loss and move on.' }
+]
+
+// shift: an optional learned offset (in points) that moves every cutoff except the bottom (Pass) together,
+// the same idea the old percentage-based decision bar used, adapted to the tier scale. Positive = stricter
+// (the user tends to disagree with "pursue"), negative = more lenient (tends to disagree with "letgo").
+export function tierFor(score, shift = 0) {
+  const tiers = shift ? SCORE_TIERS.map((t) => (t.min === -Infinity ? t : { ...t, min: t.min + shift })) : SCORE_TIERS
+  return tiers.find((t) => score >= t.min) || tiers[tiers.length - 1]
+}
+
 export function promisesOf(person) {
   const raw = Array.isArray(person?.promises) ? person.promises : []
   const out = []
@@ -458,11 +523,6 @@ function findSegment(segs, phrase, unnegated) {
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
-const dayMs = (d) => (DAY.test(d) ? Date.parse(d + 'T00:00:00Z') : NaN)
-const localToday = () => {
-  const n = new Date()
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
-}
 // Entries the app writes itself say nothing about the person.
 const isSystemContact = (c) => /^(matched|imported from)/i.test((c.note || '').trim())
 function realContacts(person) {
@@ -511,7 +571,7 @@ function readTrait(trait, person, text) {
  * verdict: 'pursue' | 'watch' | 'letgo' | 'unknown'
  * flags: [{ side: 'want'|'avoid', level, label, detail }] one entry per want or don't-want that showed up for this person.
  */
-export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
+export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
   // model (optional): { weightFor(traitId, stated) -> {weight, statedWeight, shift, reason}, thresholdShift, thresholdReason }
   // When absent, behavior is identical to the stated-criteria-only scorer.
   const criteria = normalizeCriteria(rawCriteria)
@@ -648,52 +708,21 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
   })
   if (reds.some((r) => r.key.startsWith('word:')) || softs.length) evidenceHits += 1
 
-  // 5. Date experience matters: how it actually felt.
+  // 5. Date experience matters: how it actually felt. This, and the small baseline adjustments below it, are the
+  // last of the free-text-inferred scoring: everything past this point is your own explicit, tapped point events.
   if (avgRating !== null) {
     possible += 3
     earned += 3 * ((avgRating - 1) / 4)
-    // Ratings are counted once via mine.length in confidence below; do not double count here.
     if (avgRating >= 4) reasons.push({ kind: 'good', text: `Your dates with them average ${avgRating.toFixed(1)} of 5.` })
     else if (avgRating <= 2.5) reasons.push({ kind: 'bad', text: `Your dates with them average only ${avgRating.toFixed(1)} of 5.` })
     else reasons.push({ kind: 'warn', text: `Your dates with them average ${avgRating.toFixed(1)} of 5, a middling result.` })
   }
 
-  // Direct point adjustments from follow-ups (+/-6), contact history (+/-4), how you felt (+/-4), and reflections (+/-4): together at most 10 points either way.
+  // Small baseline adjustments (up to 8 points total either way) from things already logged elsewhere in the app:
+  // how moments/hangouts felt, and whether promises were kept.
   let profileAdjust = 0
-
-  // 5b. Where the last date left off: the most recent follow-up you recorded (weight 2).
-  const followed = mine.filter((d) => d.followUp && d.followUp !== 'none' && FOLLOW_SCORE[d.followUp] !== undefined).sort((a, b) => String(b.date).localeCompare(String(a.date)))
-  if (followed.length) {
-    const f = followed[0]
-    const pts = Math.round((FOLLOW_SCORE[f.followUp] - 0.5) * 12) // planned +6, not continuing -6
-    profileAdjust += pts
-    evidenceHits += 1
-    reasons.push({ kind: pts > 0 ? 'good' : pts < 0 ? 'bad' : 'unknown', text: `Your last logged follow-up: ${FOLLOW_TEXT[f.followUp]}${pts ? ` (${pts > 0 ? '+' : ''}${pts} points)` : ''}.` })
-  }
-
-  // 5c. How much you are actually in touch (weight 1). Only counts real contact you logged, in either direction,
-  // so it reflects the connection, not just them. No logged contact means no opinion.
-  const today = opts.today && DAY.test(opts.today) ? opts.today : localToday()
   const touch = realContacts(person).filter((c) => !isSystemContact(c))
-  if (touch.length) {
-    const ago = (c) => Math.round((dayMs(today) - dayMs(c.date)) / 86400000)
-    const gaps = touch.map(ago).filter((n) => n >= 0)
-    if (gaps.length) {
-      const last = Math.min(...gaps)
-      const month = gaps.filter((n) => n <= 30).length
-      const recency = last <= 3 ? 1 : last <= 7 ? 0.8 : last <= 14 ? 0.5 : last <= 30 ? 0.25 : 0
-      const freq = month >= 8 ? 1 : month >= 4 ? 0.7 : month >= 2 ? 0.4 : month === 1 ? 0.2 : 0
-      const engagement = (recency + freq) / 2
-      const pts = Math.round((engagement - 0.5) * 8) // very active +4, gone quiet -4
-      profileAdjust += pts
-      reasons.push({
-        kind: pts > 0 ? 'good' : pts < 0 ? 'warn' : 'unknown',
-        text: `Contact: last logged ${last === 0 ? 'today' : last === 1 ? 'yesterday' : last + ' days ago'}, ${month} in the past 30 days${pts ? ` (${pts > 0 ? '+' : ''}${pts} points)` : ''}.`
-      })
-    }
-  }
 
-  // 5d. How you have felt around them: your most recent five moments or hangouts that carry a feeling (up to 4 points either way).
   const felt = [...momentsOf(person), ...hangoutsOf(person)].filter((m) => m.feeling).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)
   if (felt.length) {
     const avg = felt.reduce((sum, m) => sum + FEELING_VALUE[m.feeling], 0) / felt.length
@@ -707,80 +736,10 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
     })
   }
 
-  // 5e. Your own reflections after dates: the most recent three that have quick answers (up to 4 points either way).
-  const reflected = mine
-    .map((d) => ({ date: String(d.date || ''), score: reflectionScore(reflectionOf(d)) }))
-    .filter((x) => x.score !== null)
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 3)
-  if (reflected.length) {
-    const avg = reflected.reduce((sum, x) => sum + x.score, 0) / reflected.length
-    const pts = Math.round(avg * 4)
-    profileAdjust += pts
-    evidenceHits += 1
-    const mood = avg >= 0.5 ? 'positive' : avg >= 0.15 ? 'leaning positive' : avg > -0.15 ? 'mixed' : avg > -0.5 ? 'leaning negative' : 'negative'
-    reasons.push({
-      kind: pts > 0 ? 'good' : pts < 0 ? 'warn' : 'unknown',
-      text: `After your reflections on ${reflected.length} date${reflected.length === 1 ? '' : 's'}: ${mood}${pts ? ` (${pts > 0 ? '+' : ''}${pts} points)` : ''}.`
-    })
-  }
-
-  // 5f. How much time you actually spend together outside of dates (weight 1). No logged hangouts means no opinion,
-  // same as contact: this never penalizes a new connection for lacking history.
-  const hangouts = hangoutsOf(person)
-  if (hangouts.length) {
-    const ago = (h) => Math.round((dayMs(today) - dayMs(h.date)) / 86400000)
-    const gaps = hangouts.map(ago).filter((n) => n >= 0)
-    if (gaps.length) {
-      const last = Math.min(...gaps)
-      const month = gaps.filter((n) => n <= 30).length
-      const recency = last <= 3 ? 1 : last <= 7 ? 0.8 : last <= 14 ? 0.5 : last <= 30 ? 0.25 : 0
-      const freq = month >= 6 ? 1 : month >= 3 ? 0.7 : month >= 1 ? 0.4 : 0
-      const engagement = (recency + freq) / 2
-      const pts = Math.round((engagement - 0.5) * 8) // spending real time together +4, none lately -4
-      profileAdjust += pts
-      evidenceHits += 1
-      reasons.push({
-        kind: pts > 0 ? 'good' : pts < 0 ? 'warn' : 'unknown',
-        text: `Time together: last logged ${last === 0 ? 'today' : last === 1 ? 'yesterday' : last + ' days ago'}, ${month} in the past 30 days${pts ? ` (${pts > 0 ? '+' : ''}${pts} points)` : ''}.`
-      })
-    }
-  }
-
-  // 6. Red-flag tags they carry that were not red lines still count against them.
-  const redCount = (person.tags || []).filter((t) =>
-    ['inconsistent', 'slowreply', 'vague', 'selfabsorbed', 'pushy'].includes(t)
-  ).length
-  const greenCount = (person.tags || []).filter((t) =>
-    ['communicator', 'consistent', 'dogs', 'funny', 'ambitious'].includes(t)
-  ).length
-  // Flags you typed yourself count exactly like the built-in ones: red lowers, green raises.
-  const custom = customFlagsOf(person)
-  const customGreen = custom.filter((f) => f.kind === 'green').length
-  const customRed = custom.filter((f) => f.kind === 'red').length
-  if (custom.length) {
-    reasons.push({
-      kind: customRed > customGreen ? 'warn' : customGreen > customRed ? 'good' : 'unknown',
-      text: `Flags you added: ${customGreen} green, ${customRed} red (${custom.map((f) => f.label).slice(0, 3).join(', ')}${custom.length > 3 ? ', …' : ''}).`
-    })
-  }
-
-  // 6b. Things they said that you flagged green or red count the same as any other flag you added.
   const promises = promisesOf(person)
-  const flaggedPromises = promises.filter((pr) => pr.flag)
-  const promiseGreen = flaggedPromises.filter((pr) => pr.flag === 'green').length
-  const promiseRed = flaggedPromises.filter((pr) => pr.flag === 'red').length
-  if (flaggedPromises.length) {
-    reasons.push({
-      kind: promiseRed > promiseGreen ? 'warn' : promiseGreen > promiseRed ? 'good' : 'unknown',
-      text: `Things they said, flagged: ${promiseGreen} green, ${promiseRed} red.`
-    })
-  }
-  // A promise you marked broken is its own, stronger signal, separate from the flag color: someone can break a
-  // promise you never flagged at all, and that still matters.
   const broken = promises.filter((pr) => pr.followThrough === 'no')
   if (broken.length) {
-    profileAdjust -= Math.min(6, broken.length * 3)
+    profileAdjust -= Math.min(4, broken.length * 2)
     evidenceHits += 1
     reasons.push({
       kind: 'bad',
@@ -796,53 +755,91 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
       text: `Followed through on ${keptCount} thing${keptCount === 1 ? '' : 's'} they said.`
     })
   }
+  const flaggedPromises = promises.filter((pr) => pr.flag)
+  const promiseGreen = flaggedPromises.filter((pr) => pr.flag === 'green').length
+  const promiseRed = flaggedPromises.filter((pr) => pr.flag === 'red').length
+  if (flaggedPromises.length) {
+    reasons.push({
+      kind: promiseRed > promiseGreen ? 'warn' : promiseGreen > promiseRed ? 'good' : 'unknown',
+      text: `Things they said, flagged: ${promiseGreen} green, ${promiseRed} red.`
+    })
+  }
 
-  possible += 2
-  earned += Math.max(0, Math.min(2, 1 + (greenCount + customGreen + promiseGreen - redCount - customRed - promiseRed) * 0.4))
+  // Built-in and custom green/red flags on the profile are part of the criteria baseline too: a weight-2 slot,
+  // same footprint they always had.
+  const builtinGreen = (person.tags || []).filter((t) => ['communicator', 'consistent', 'dogs', 'funny', 'ambitious'].includes(t)).length
+  const builtinRed = (person.tags || []).filter((t) => ['inconsistent', 'slowreply', 'vague', 'selfabsorbed', 'pushy'].includes(t)).length
+  const custom = customFlagsOf(person)
+  const customGreen = custom.filter((f) => f.kind === 'green').length
+  const customRed = custom.filter((f) => f.kind === 'red').length
+  if (custom.length) {
+    reasons.push({
+      kind: customRed > customGreen ? 'warn' : customGreen > customRed ? 'good' : 'unknown',
+      text: `Flags you added: ${customGreen} green, ${customRed} red (${custom.map((f) => f.label).slice(0, 3).join(', ')}${custom.length > 3 ? ', …' : ''}).`
+    })
+  }
+  if (builtinGreen + builtinRed + customGreen + customRed > 0) {
+    possible += 2
+    earned += Math.max(0, Math.min(2, 1 + (builtinGreen + customGreen - builtinRed - customRed) * 0.4))
+    evidenceHits += 1
+  }
 
-  const baseScore = Math.max(0, Math.min(100, (possible > 0 ? Math.round((earned / possible) * 100) : 0) + Math.max(-10, Math.min(10, profileAdjust))))
-  // "Would rather not" lowers the score by a fixed, visible amount. It is capped so a pile of small dislikes
+  const baseScore = Math.max(0, Math.min(100, (possible > 0 ? Math.round((earned / possible) * 100) : 0) + Math.max(-8, Math.min(8, profileAdjust))))
+  // "Would rather not" lowers the baseline by a fixed, visible amount. It is capped so a pile of small dislikes
   // cannot behave like a red line.
   const penalty = Math.min(SOFT_CAP, SOFT_PENALTY * softs.length)
-  const score = Math.max(0, baseScore - penalty)
+  const criteriaScore = Math.max(0, baseScore - penalty)
   softs.forEach((x) => reasons.push({ kind: 'warn', dup: true, text: `${x.text} Score -${SOFT_PENALTY}.` }))
   if (softs.length * SOFT_PENALTY > SOFT_CAP) {
     reasons.push({ kind: 'warn', text: `Several "would rather not" hits. The reduction stops at -${SOFT_CAP}.` })
   }
 
-  // Confidence: how much real data backs this up.
-  // A single date is one observation, not proof: require several distinct signals.
-  const dataPoints = evidenceHits + mine.length
-  const confidence = dataPoints >= 5 ? 'high' : dataPoints >= 3 ? 'medium' : 'low'
-
-  const dealTexts = reds.map((r) => r.text)
-
+  // The running score: every point event you have ever tapped for this person, all-time, unbounded, no decay.
+  // This is what tiers and reasons are built from; the criteria baseline above is a separate, secondary readout.
+  const pointEvents = pointEventsOf(person)
+  const score = pointScoreOf(person)
   const tShift = model?.thresholdShift || 0
-  const PURSUE_AT = 70 + tShift
-  const WATCH_AT = 45 + tShift
-  let verdict
-  if (reds.length > 0) verdict = 'letgo'
-  else if (dataPoints === 0) verdict = 'unknown'
-  else if (score >= PURSUE_AT) verdict = 'pursue'
-  else if (score >= WATCH_AT) verdict = 'watch'
-  else verdict = 'letgo'
-  if (tShift !== 0 && reds.length === 0 && dataPoints > 0) {
+  const tier = tierFor(score, tShift)
+  if (tShift !== 0) {
     adjustments.push({
       traitId: '_threshold',
       label: 'Decision bar',
-      from: 70,
-      to: PURSUE_AT,
+      from: 0,
+      to: tShift,
       shift: tShift,
       reason: model.thresholdReason
     })
   }
+  for (const group of ['effort', 'vibe', 'red']) {
+    const inGroup = pointEvents.filter((ev) => POINT_EVENT_MAP[ev.kind]?.group === group)
+    if (!inGroup.length) continue
+    const sum = inGroup.reduce((s, ev) => s + ev.points, 0)
+    const label = group === 'effort' ? 'Effort and consistency' : group === 'vibe' ? 'Vibe and compatibility' : 'Red flags and disrespect'
+    reasons.push({
+      kind: sum > 0 ? 'good' : sum < 0 ? 'bad' : 'unknown',
+      text: `${label}: ${inGroup.length} logged event${inGroup.length === 1 ? '' : 's'} (${sum > 0 ? '+' : ''}${sum} points).`
+    })
+  }
+  if (!pointEvents.length) {
+    reasons.push({ kind: 'unknown', text: 'No point events logged yet: nothing tapped for effort, vibe, or red flags.' })
+  }
 
-  // Guardrail: do not tell someone to give up on thin data unless a red line fired.
-  if (verdict === 'letgo' && reds.length === 0 && confidence === 'low') verdict = 'watch'
-  // Guardrail: do not strongly say pursue on almost no data.
-  if (verdict === 'pursue' && confidence === 'low') verdict = 'watch'
-  // Guardrail: "would rather not" lowers the score but never forces "let go" by itself.
-  if (verdict === 'letgo' && reds.length === 0 && softs.length > 0 && baseScore >= WATCH_AT) verdict = 'watch'
+  // Confidence: how much real data backs this up. A single date is one observation, not proof.
+  const dataPoints = evidenceHits + mine.length + pointEvents.length
+  const confidence = dataPoints >= 5 ? 'high' : dataPoints >= 3 ? 'medium' : 'low'
+
+  const dealTexts = reds.map((r) => r.text)
+
+  // The dealbreaker override still applies regardless of the point score: a red line means Pass, full stop.
+  const verdict = reds.length > 0
+    ? 'letgo'
+    : dataPoints === 0 && pointEvents.length === 0
+      ? 'unknown'
+      : tier.id === 'high'
+        ? 'pursue'
+        : tier.id === 'exploring' || tier.id === 'low'
+          ? 'watch'
+          : 'letgo'
 
   // The four parts of the explanation: what fits, how much we know, what has not been explored, and how it has felt.
   const unknowns = []
@@ -869,12 +866,15 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
     promises: promisesOf(person).length,
     plans: plansOf(person).length,
     flags: (person.tags || []).length + custom.length,
-    remembered: rememberOf(person).filter((x) => x.kind !== 'note').length
+    remembered: rememberOf(person).filter((x) => x.kind !== 'note').length,
+    pointEvents: pointEvents.length
   }
 
   return {
     verdict,
     score,
+    tier,
+    criteriaScore,
     baseScore,
     penalty,
     confidence,
@@ -885,6 +885,7 @@ export function evaluate(person, dates, rawCriteria, model = null, opts = {}) {
     evidence,
     avgRating,
     dateCount: mine.length,
+    pointEvents,
     adjustments
   }
 }
@@ -893,12 +894,10 @@ const order = { bad: 0, warn: 1, good: 2, unknown: 3 }
 // Which of the four explanation sections a reason belongs to.
 export function sectionOf(r) {
   if (r.kind === 'unknown' && /nothing recorded yet/.test(r.text)) return 'unknowns'
-  if (/^(Your last logged follow-up|Contact:|Time together:|How you have felt|After your reflections|Your dates with them average|Did not follow through on|Followed through on)/.test(r.text)) return 'experience'
+  if (/^(Effort and consistency|Vibe and compatibility|Red flags and disrespect|No point events logged)/.test(r.text)) return 'points'
+  if (/^(How you have felt|Your dates with them average|Did not follow through on|Followed through on)/.test(r.text)) return 'experience'
   return 'compatibility'
 }
-// How positive each follow-up is, and how it reads in a reason.
-const FOLLOW_SCORE = { planned: 1, me: 0.6, them: 0.5, done: 0 }
-const FOLLOW_TEXT = { planned: 'a next date is planned', me: 'you still want to text them', them: 'you are waiting on them', done: 'you marked it as not continuing' }
 const flagRank = (f) => (f.side === 'avoid' ? (f.level === 'redline' ? 0 : 1) : 2)
 
 export const VERDICT = {
