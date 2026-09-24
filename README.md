@@ -250,22 +250,32 @@ Data saved before this version loads unchanged. A stage that no longer exists, o
 
 **First met.** A date field in the About section, separate from "How you met." It shows on the timeline as its own entry and is never counted as your last interaction.
 
-**Things they said.** A place on the profile, under Plans and reminders, for promises, plans they mentioned, or anything else worth remembering, whether or not they followed through. Each entry has the day they said it, the words, whether they followed through (too soon to tell, yes, no, or partly), and an optional green or red flag. A flagged entry counts in Fit like any other flag you add; marking one as not followed through counts against the score on its own, flag or not, and following through counts in its favor. Entries show on the timeline too, with the same tags.
+**Things they said.** A plain comment log on the profile, under Plans and reminders, for quotes, comments, or anything else worth remembering. Just the day and the words; nothing to track. For something they actually promised, use Promises below instead.
 
-Both sections can be hidden per profile from Settings, and hiding one deletes nothing.
+**Promises.** A separate tracker, right under Things they said, for anything they said they would do, for you or with you. Each entry has the day, the words, whether they followed through (too soon to tell, yes, no, or partly), and an optional green or red flag, so you can keep track of whether someone is a man of his word. A flagged promise counts in Fit like any other flag you add; not following through counts against the score on its own, flag or not, and following through counts in its favor.
 
-## Scoring: point events
+Both "Things they said" and "Promises" can be hidden per profile from Settings, and hiding one deletes nothing.
 
-Fit's score is now a running, all-time point total, not a percentage. Tap point events from a date, from logging time together, or directly from a profile with **Log points**:
+## Logging time together
 
-**Effort & consistency:** initiated contact or made plans (+5), remembered a small detail (+5), on time (+5), respected a boundary immediately (+10), clear communication (+10), put thought into a plan (+5) or a thoughtful one (+10).
+**Log a date** and **Log time together** are one form now, reached from either button on a profile: a toggle at the top switches between "A date" and "Time together," and the rest of the form follows (star rating and reflection for a date; a kind picker and how-it-felt for time together). Voice input works on both: tap Speak it, and if the microphone is blocked or drops, you'll see why, not just silence.
 
-**Vibe & compatibility:** conversation flowed (+5), shared core values came up (+10), chemistry (+5), made you laugh (+5).
+Either kind can be marked **Cancelled** instead of Happened. A cancelled entry swaps in a short "what happened" field and a feeling picker, skips the rating and follow-up fields that would not make sense for something that did not happen, and counts against the score automatically.
 
-**Red flags:** late without notice (-5), cancelled last-minute (-10), hot-and-cold (-5), rude to staff (-15), talked about an ex (-10), crossed a boundary (-20), lied or a major inconsistency (-25).
+## Scoring
 
-Every tap adds to the running total, unbounded in both directions, with no decay: **35+ is High Potential, 15 to 34 is Exploring, 0 to 14 is Low Priority, below 0 is Pass**. A red line dealbreaker still forces Pass regardless of points. The score and tier show as a badge on person cards (once something is logged), on the profile header, and in the Fit tab.
+Fit's score is a running, all-time point total, not a percentage, and it is entirely automatic: nothing to tap. It is read from things you already log:
 
-Your criteria (must-haves, nice-to-haves, dealbreakers) still work as before and set a separate "criteria match" baseline: date ratings, moment and hangout feelings, and whether promises were kept still feed it. That baseline never drives the verdict on its own anymore; the point log does.
+**From structured fields:** a date's star rating and follow-up, your reflection answers, a moment's or hangout's feeling, whether a promise was kept, and whether a date or hangout was cancelled.
 
-Every point event is kept in a dated log on the profile's Timeline, and can be removed (undoable) at any time.
+**From what you write:** a date's activity and impressions, a moment's or hangout's text, a promise's text, and a reflection's journal entry are read for the same kind of effort, vibe, and red-flag language the scoring model looks for, each entry worth at most one point event per direction.
+
+**Effort & consistency:** initiating contact or making plans, remembering a small detail, being on time, respecting a boundary, clear communication, a decent or thoughtful plan (+5 to +10 each).
+
+**Vibe & compatibility:** conversation flowing, shared values coming up, chemistry, making you laugh (+5 to +10 each).
+
+**Red flags:** lateness, cancelling, hot-and-cold behavior, rudeness to staff, talking about an ex, crossing a boundary, lying (-5 to -25 each).
+
+The total is unbounded in both directions, with no decay: **35+ is High Potential, 15 to 34 is Exploring, 0 to 14 is Low Priority, below 0 is Pass**. A red line dealbreaker still forces Pass regardless of points. The score and tier show as a badge on person cards (once something is detected), on the profile header, and in the Fit tab.
+
+Your criteria (must-haves, nice-to-haves, dealbreakers) still work as before and set a separate "criteria match" baseline shown alongside the point score: date ratings, moment and hangout feelings, and whether promises were kept feed it too. That baseline never drives the verdict on its own; the point score does.

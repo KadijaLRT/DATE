@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, hangoutsOf, promisesOf, pointEventsOf, plansOf, rememberOf, reflectionOf, TAGS, validDay } from './fit.js'
+import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, hangoutsOf, promisesOf, commitmentsOf, plansOf, rememberOf, reflectionOf, TAGS, validDay } from './fit.js'
 import { normalizeSettings } from './settings.js'
 import { cleanPhoto } from './photos.js'
 
@@ -128,7 +128,7 @@ export function migratePerson(p) {
     moments: momentsOf(rest),
     hangouts: hangoutsOf(rest),
     promises: promisesOf(rest),
-    pointEvents: pointEventsOf(rest),
+    commitments: commitmentsOf(rest),
     metDate: validDay(rest.metDate) ? rest.metDate : '',
     relationshipStartDate: validDay(rest.relationshipStartDate) ? rest.relationshipStartDate : '',
     plans: plansOf(rest),
@@ -191,7 +191,7 @@ export function useStore() {
       moments: [],
       hangouts: [],
       promises: [],
-      pointEvents: [],
+      commitments: [],
       plans: [],
       remember: [],
       notes: [],
@@ -312,25 +312,20 @@ export function useStore() {
       people: d.people.map((p) => (p.id === personId ? { ...p, promises: promisesOf(p).filter((pr) => pr.id !== promiseId) } : p))
     }))
 
-  // Point events are append-only: a tapped chip logs one; nothing is ever edited in place, only added or removed.
-  // One call can log several at once, since a single date or hangout often earns more than one tag.
-  const addPointEvents = (personId, entries) => {
-    if (!entries.length) return
-    notify(entries.length === 1 ? 'Logged' : `Logged ${entries.length} events`)
+  const addCommitment = (personId, cm) => {
+    notify('Promise saved')
     setData((d) => ({
       ...d,
       people: d.people.map((p) =>
-        p.id === personId
-          ? { ...p, pointEvents: pointEventsOf({ pointEvents: [...pointEventsOf(p), ...entries.map((e) => ({ id: uid(), ...e }))] }) }
-          : p
+        p.id === personId ? { ...p, commitments: commitmentsOf({ commitments: [...commitmentsOf(p), { id: uid(), ...cm }] }) } : p
       )
     }))
   }
 
-  const rawDeletePointEvent = (personId, eventId) =>
+  const rawDeleteCommitment = (personId, commitmentId) =>
     setData((d) => ({
       ...d,
-      people: d.people.map((p) => (p.id === personId ? { ...p, pointEvents: pointEventsOf(p).filter((e) => e.id !== eventId) } : p))
+      people: d.people.map((p) => (p.id === personId ? { ...p, commitments: commitmentsOf(p).filter((cm) => cm.id !== commitmentId) } : p))
     }))
 
   const rawDeleteContact = (personId, contactId) =>
@@ -374,7 +369,7 @@ export function useStore() {
   const deleteMoment = (personId, momentId) => undoable('Moment deleted', () => rawDeleteMoment(personId, momentId))
   const deleteHangout = (personId, hangoutId) => undoable('Time together deleted', () => rawDeleteHangout(personId, hangoutId))
   const deletePromise = (personId, promiseId) => undoable('Removed', () => rawDeletePromise(personId, promiseId))
-  const deletePointEvent = (personId, eventId) => undoable('Point event removed', () => rawDeletePointEvent(personId, eventId))
+  const deleteCommitment = (personId, commitmentId) => undoable('Promise removed', () => rawDeleteCommitment(personId, commitmentId))
   const eraseEverything = () => undoable('Everything erased', () => setData({ ...empty, settings: dataRef.current.settings }))
 
   const patchPerson = (id, fn) =>
@@ -386,6 +381,8 @@ export function useStore() {
     patchPerson(personId, (p) => ({ hangouts: hangoutsOf({ hangouts: hangoutsOf(p).map((h) => (h.id === hangoutId ? { ...h, ...patch } : h)) }) }))
   const updatePromise = (personId, promiseId, patch) =>
     patchPerson(personId, (p) => ({ promises: promisesOf({ promises: promisesOf(p).map((pr) => (pr.id === promiseId ? { ...pr, ...patch } : pr)) }) }))
+  const updateCommitment = (personId, commitmentId, patch) =>
+    patchPerson(personId, (p) => ({ commitments: commitmentsOf({ commitments: commitmentsOf(p).map((cm) => (cm.id === commitmentId ? { ...cm, ...patch } : cm)) }) }))
 
   const addPlan = (personId, plan) => {
     patchPerson(personId, (p) => ({ plans: plansOf({ plans: [...plansOf(p), { id: uid(), ...plan }] }) }))
@@ -455,8 +452,9 @@ export function useStore() {
     addPromise,
     updatePromise,
     deletePromise,
-    addPointEvents,
-    deletePointEvent,
+    addCommitment,
+    updateCommitment,
+    deleteCommitment,
     deleteMoment,
     updateMoment,
     addPlan,

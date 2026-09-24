@@ -1,7 +1,7 @@
 // Builds one chronological story out of what the app already stores: dates, contact, your own moments,
 // the match, and how a connection ended. Nothing is copied or duplicated; entries are derived every time.
 
-import { momentsOf, hangoutsOf, promisesOf, plansOf, reflectionOf, MOMENT_TYPES, HANGOUT_TYPES, FOLLOW_THROUGH, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS } from './fit.js'
+import { momentsOf, hangoutsOf, promisesOf, commitmentsOf, plansOf, reflectionOf, MOMENT_TYPES, HANGOUT_TYPES, FOLLOW_THROUGH, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS } from './fit.js'
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 const goodDay = (d) => typeof d === 'string' && DAY_RE.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z'))
@@ -19,11 +19,11 @@ export const GROUPS = {
   all: null,
   dates: ['date', 'plan'],
   contact: ['contact'],
-  moments: ['moment', 'hangout', 'promise', 'matched', 'met', 'startdate', 'ended']
+  moments: ['moment', 'hangout', 'promise', 'commitment', 'matched', 'met', 'startdate', 'ended']
 }
 
 // Order within one day, newest-feeling first: how it ended, then dates, then your moments, then contact, then the match.
-const KIND_ORDER = { ended: 0, date: 1, plan: 1, hangout: 2, moment: 2, promise: 2, contact: 3, matched: 4, met: 5, startdate: 5 }
+const KIND_ORDER = { ended: 0, date: 1, plan: 1, hangout: 2, moment: 2, promise: 2, commitment: 2, contact: 3, matched: 4, met: 5, startdate: 5 }
 const MOMENT_LABEL = Object.fromEntries(MOMENT_TYPES.map((t) => [t.id, t.label]))
 const HANGOUT_LABEL = Object.fromEntries(HANGOUT_TYPES.map((t) => [t.id, t.label]))
 const FOLLOW_THROUGH_LABEL = Object.fromEntries(FOLLOW_THROUGH.map((f) => [f.id, f.label]))
@@ -84,6 +84,7 @@ export function buildTimeline(people, dates, opts = {}) {
         hangoutType: h.type,
         text: h.text,
         feeling: h.feeling,
+        status: h.status,
         refId: h.id,
         deletable: true
       })
@@ -97,10 +98,23 @@ export function buildTimeline(people, dates, opts = {}) {
         date: pr.date,
         title: 'Something they said',
         text: pr.text,
-        followThrough: pr.followThrough,
-        followThroughLabel: FOLLOW_THROUGH_LABEL[pr.followThrough],
-        promiseFlag: pr.flag,
         refId: pr.id,
+        deletable: true
+      })
+    }
+
+    for (const cm of commitmentsOf(p)) {
+      add({
+        ...base,
+        key: `cm:${p.id}:${cm.id}`,
+        kind: 'commitment',
+        date: cm.date,
+        title: 'Promise',
+        text: cm.text,
+        followThrough: cm.followThrough,
+        followThroughLabel: FOLLOW_THROUGH_LABEL[cm.followThrough],
+        promiseFlag: cm.flag,
+        refId: cm.id,
         deletable: true
       })
     }
@@ -171,6 +185,7 @@ export function buildTimeline(people, dates, opts = {}) {
       date: goodDay(d.date) ? d.date : '',
       title: typeof d.activity === 'string' && d.activity.trim() ? d.activity.trim() : 'Date',
       rating: Number.isFinite(d.rating) && d.rating > 0 ? Math.min(5, Math.round(d.rating)) : 0,
+      status: d.status === 'cancelled' ? 'cancelled' : 'happened',
       followUp: d.followUp && d.followUp !== 'none' && FOLLOW_TEXT[d.followUp] ? FOLLOW_TEXT[d.followUp] : '',
       bullets: Array.isArray(d.impressions) ? d.impressions.filter((x) => typeof x === 'string' && x.trim()) : [],
       reflection: reflectionChips(reflectionOf(d)),

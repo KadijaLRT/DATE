@@ -187,23 +187,101 @@ export const POINT_EVENTS = [
 export const MAX_POINT_EVENTS = 500
 const POINT_EVENT_MAP = Object.fromEntries(POINT_EVENTS.map((e) => [e.id, e]))
 
-export function pointEventsOf(person) {
-  const raw = Array.isArray(person?.pointEvents) ? person.pointEvents : []
+// Point events are entirely automatic: derived from things already logged, never tapped by hand. Two sources feed
+// them, both deterministic, no keyword-guessing on the structured side:
+//
+// 1. Structured fields, mapped one-to-one: a date's rating and follow-up, a post-date reflection's answers, a
+//    moment or hangout's feeling, whether a promise was kept. Each of these already exists for its own reason;
+//    this just reads the value already there and assigns it a fixed point kind.
+// 2. Free text, scanned with the same word lists the compatibility traits use: a date's impressions and activity,
+//    a moment's or hangout's text, a promise's text, and a reflection's journal entry. A positive-tell phrase adds
+//    the matching effort/vibe event once per entry; a negative-tell phrase adds the matching red-flag event once.
+//    Each entry can contribute at most one point event per direction, so a long paragraph cannot be farmed for
+//    repeated points the way a single word could.
+//
+// Nothing here is stored: it is recomputed fresh every time from the date/person records that already exist.
+const TEXT_POSITIVE = {
+  clear_comm: ['clear about', 'direct about', 'communicated clearly', 'said exactly', 'no mixed signals', 'straightforward'],
+  flowing_convo: ['conversation flowed', 'easy to talk to', 'never a lull', 'talked for hours', 'easy conversation'],
+  shared_values: ['shared values', 'wants the same', 'on the same page', 'same priorities', 'values align'],
+  chemistry: ['chemistry', 'butterflies', 'great connection', 'sparks'],
+  made_laugh: ['laughed a lot', 'made me laugh', 'hilarious', 'so funny', 'had me laughing'],
+  initiates: ['texted first', 'planned the whole thing', 'reached out first', 'made the plans', 'initiated'],
+  remembers: ['remembered that', 'remembered i', 'remembered my', 'brought up something i said'],
+  on_time: ['right on time', 'showed up early', 'punctual'],
+  boundary_respected: ['respected my boundary', 'respected when i said', 'backed off immediately', 'respected my no']
+}
+const TEXT_NEGATIVE = {
+  late_no_notice: ['showed up late', 'late with no', 'late and no apology', 'kept me waiting'],
+  cancelled: ['cancelled last minute', 'cancelled last-minute', 'bailed last minute', 'flaked'],
+  hot_cold: ['hot and cold', 'hot-and-cold', 'mixed signals', 'confusing signals'],
+  rude_staff: ['rude to the waiter', 'rude to the server', 'rude to staff', 'snapped at the waiter'],
+  ex_talk: ['talked about his ex', 'talked about her ex', 'wouldn\u2019t stop talking about', 'couldn\u2019t stop talking about the ex', 'brought up their ex'],
+  boundary_crossed: ['pushed after i said no', 'wouldn\u2019t take no', 'ignored my boundary', 'kept pushing', 'crossed a line'],
+  lied: ['caught in a lie', 'lied about', 'wasn\u2019t honest about', 'story did not add up', "story didn't add up"]
+}
+const normText = (t) => String(t || '').toLowerCase()
+function scanText(text, into) {
+  const t = normText(text)
+  if (!t) return
+  for (const [kind, phrases] of Object.entries(TEXT_POSITIVE)) if (phrases.some((p) => t.includes(p))) into.push(kind)
+  for (const [kind, phrases] of Object.entries(TEXT_NEGATIVE)) if (phrases.some((p) => t.includes(p))) into.push(kind)
+}
+
+export function pointEventsOf(person, dates = []) {
   const out = []
-  const seen = new Set()
-  raw.forEach((ev, i) => {
-    if (!ev || typeof ev !== 'object' || !POINT_EVENT_MAP[ev.kind] || !validDay(ev.date)) return
-    let id = typeof ev.id === 'string' && ev.id ? ev.id : `pe-${i}`
-    while (seen.has(id)) id += '_'
-    seen.add(id)
-    out.push({ id, date: ev.date, kind: ev.kind, points: POINT_EVENT_MAP[ev.kind].points, label: POINT_EVENT_MAP[ev.kind].label })
-  })
+  const push = (date, kind) => { if (POINT_EVENT_MAP[kind] && validDay(date)) out.push({ id: `${kind}:${date}:${out.length}`, date, kind, points: POINT_EVENT_MAP[kind].points, label: POINT_EVENT_MAP[kind].label }) }
+
+  const mine = (Array.isArray(dates) ? dates : []).filter((d) => d && d.personId === person?.id && validDay(d.date))
+  for (const d of mine) {
+    if (d.status === 'cancelled') { push(d.date, 'cancelled'); const hits = []; scanText(d.activity, hits); hits.forEach((k) => push(d.date, k)); continue }
+    if (typeof d.rating === 'number' && d.rating >= 5) push(d.date, 'plan_great')
+    else if (typeof d.rating === 'number' && d.rating === 4) push(d.date, 'plan_decent')
+    if (d.followUp === 'planned') push(d.date, 'initiates')
+    else if (d.followUp === 'done') push(d.date, 'hot_cold')
+    const r = reflectionOf(d)
+    if (r) {
+      const rs = reflectionScore(r)
+      if (rs !== null && rs >= 0.5) push(d.date, 'made_laugh')
+      else if (rs !== null && rs <= -0.5) push(d.date, 'hot_cold')
+      if (r.journal) { const hits = []; scanText(r.journal, hits); hits.forEach((k) => push(d.date, k)) }
+    }
+    const hits = []
+    scanText(d.activity, hits)
+    ;(d.impressions || []).forEach((i) => scanText(i, hits))
+    hits.forEach((k) => push(d.date, k))
+  }
+
+  for (const m of momentsOf(person)) {
+    if (m.feeling === 'great') push(m.date, 'flowing_convo')
+    else if (m.feeling === 'rough') push(m.date, 'hot_cold')
+    const hits = []; scanText(m.text, hits); hits.forEach((k) => push(m.date, k))
+  }
+
+  for (const h of hangoutsOf(person)) {
+    if (h.status === 'cancelled') push(h.date, 'cancelled')
+    else if (h.feeling === 'great') push(h.date, 'initiates')
+    else if (h.feeling === 'rough') push(h.date, 'hot_cold')
+    const hits = []; scanText(h.text, hits); hits.forEach((k) => push(h.date, k))
+  }
+
+  for (const pr of promisesOf(person)) {
+    const hits = []; scanText(pr.text, hits); hits.forEach((k) => push(pr.date, k))
+  }
+
+  for (const cm of commitmentsOf(person)) {
+    if (cm.followThrough === 'yes') push(cm.date, 'clear_comm')
+    else if (cm.followThrough === 'no') push(cm.date, 'lied')
+    const hits = []; scanText(cm.text, hits); hits.forEach((k) => push(cm.date, k))
+  }
+
   return out.slice(0, MAX_POINT_EVENTS)
 }
 
-// The running, all-time total: unbounded in both directions, no decay, no confidence weighting.
-export function pointScoreOf(person) {
-  return pointEventsOf(person).reduce((sum, ev) => sum + ev.points, 0)
+// The running, all-time total: unbounded in both directions, no decay, no confidence weighting. Entirely derived,
+// nothing stored.
+export function pointScoreOf(person, dates = []) {
+  return pointEventsOf(person, dates).reduce((sum, ev) => sum + ev.points, 0)
 }
 
 export const SCORE_TIERS = [
@@ -221,6 +299,8 @@ export function tierFor(score, shift = 0) {
   return tiers.find((t) => score >= t.min) || tiers[tiers.length - 1]
 }
 
+// A plain comment log: things they said, worth remembering, with no tracking of whether it was a promise.
+// Kept deliberately simple; use commitmentsOf for anything that needs to be followed up on.
 export function promisesOf(person) {
   const raw = Array.isArray(person?.promises) ? person.promises : []
   const out = []
@@ -232,6 +312,28 @@ export function promisesOf(person) {
     let id = typeof pr.id === 'string' && pr.id ? pr.id : `pr-${i}`
     while (seen.has(id)) id += '_'
     seen.add(id)
+    out.push({ id, date: pr.date, text })
+  })
+  return out.slice(0, MAX_PROMISES)
+}
+
+/**
+ * Promises: things they said they would do, tracked separately from plain comments, with whether they followed
+ * through and, optionally, whether it counts as a green or red flag.
+ */
+export const MAX_COMMITMENTS = 100
+export const MAX_COMMITMENT_TEXT = 300
+export function commitmentsOf(person) {
+  const raw = Array.isArray(person?.commitments) ? person.commitments : []
+  const out = []
+  const seen = new Set()
+  raw.forEach((pr, i) => {
+    if (!pr || typeof pr !== 'object' || !validDay(pr.date)) return
+    const text = typeof pr.text === 'string' ? pr.text.trim().slice(0, MAX_COMMITMENT_TEXT) : ''
+    if (!text) return
+    let id = typeof pr.id === 'string' && pr.id ? pr.id : `cm-${i}`
+    while (seen.has(id)) id += '_'
+    seen.add(id)
     out.push({
       id,
       date: pr.date,
@@ -240,7 +342,7 @@ export function promisesOf(person) {
       flag: pr.flag === 'green' || pr.flag === 'red' ? pr.flag : null
     })
   })
-  return out.slice(0, MAX_PROMISES)
+  return out.slice(0, MAX_COMMITMENTS)
 }
 
 /**
@@ -258,6 +360,12 @@ export const MAX_HANGOUTS = 200
 export const MAX_HANGOUT_TEXT = 400
 const HANGOUT_TYPE_IDS = new Set(HANGOUT_TYPES.map((t) => t.id))
 
+export const HANGOUT_STATUS = [
+  { id: 'happened', label: 'Happened' },
+  { id: 'cancelled', label: 'Cancelled' }
+]
+const HANGOUT_STATUS_IDS = new Set(HANGOUT_STATUS.map((s) => s.id))
+
 export function hangoutsOf(person) {
   const raw = Array.isArray(person?.hangouts) ? person.hangouts : []
   const out = []
@@ -266,10 +374,11 @@ export function hangoutsOf(person) {
     if (!h || typeof h !== 'object' || !validDay(h.date)) return
     const text = typeof h.text === 'string' ? h.text.trim().slice(0, MAX_HANGOUT_TEXT) : ''
     const feeling = typeof h.feeling === 'string' && h.feeling in FEELING_VALUE ? h.feeling : null
+    const status = HANGOUT_STATUS_IDS.has(h.status) ? h.status : 'happened'
     let id = typeof h.id === 'string' && h.id ? h.id : `h-${i}`
     while (seen.has(id)) id += '_'
     seen.add(id)
-    out.push({ id, date: h.date, type: HANGOUT_TYPE_IDS.has(h.type) ? h.type : 'inperson', text, feeling })
+    out.push({ id, date: h.date, type: HANGOUT_TYPE_IDS.has(h.type) ? h.type : 'inperson', text, feeling, status })
   })
   return out.slice(0, MAX_HANGOUTS)
 }
@@ -476,7 +585,7 @@ function hasUnnegated(text, phrase) {
 
 function evidenceText(person, dates) {
   const mine = dates.filter((d) => d.personId === person.id)
-  const parts = [...(person.notes || []), person.met, person.job, ...realContacts(person).map((c) => c.note), ...momentsOf(person).map((m) => m.text), ...hangoutsOf(person).map((h) => h.text), ...plansOf(person).flatMap((x) => [x.title, x.place]), ...rememberOf(person).map((x) => x.text)]
+  const parts = [...(person.notes || []), person.met, person.job, ...realContacts(person).map((c) => c.note), ...momentsOf(person).map((m) => m.text), ...hangoutsOf(person).map((h) => h.text), ...promisesOf(person).map((pr) => pr.text), ...commitmentsOf(person).map((cm) => cm.text), ...plansOf(person).flatMap((x) => [x.title, x.place]), ...rememberOf(person).map((x) => x.text)]
   mine.forEach((d) => {
     parts.push(d.activity)
     const rf = reflectionOf(d)
@@ -500,6 +609,8 @@ function evidenceSegments(person, dates) {
   realContacts(person).filter((c) => !isSystemContact(c)).forEach((c) => push('a contact note', c.note))
   momentsOf(person).forEach((m) => push('a moment', m.text))
   hangoutsOf(person).forEach((h) => push('time together', h.text))
+  promisesOf(person).forEach((pr) => push('something they said', pr.text))
+  commitmentsOf(person).forEach((cm) => push('a promise', cm.text))
   plansOf(person).forEach((x) => { push('a plan', x.title); push('a plan', x.place) })
   rememberOf(person).forEach((x) => push(x.kind === 'note' ? 'a note' : 'a remembered detail', x.text))
   dates
@@ -736,32 +847,32 @@ export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
     })
   }
 
-  const promises = promisesOf(person)
-  const broken = promises.filter((pr) => pr.followThrough === 'no')
+  const commitments = commitmentsOf(person)
+  const broken = commitments.filter((pr) => pr.followThrough === 'no')
   if (broken.length) {
     profileAdjust -= Math.min(4, broken.length * 2)
     evidenceHits += 1
     reasons.push({
       kind: 'bad',
-      text: `Did not follow through on ${broken.length} thing${broken.length === 1 ? '' : 's'} they said${broken.length === 1 && broken[0].text ? `: "${clip(broken[0].text, 50)}"` : ''}.`
+      text: `Did not follow through on ${broken.length} promise${broken.length === 1 ? '' : 's'}${broken.length === 1 && broken[0].text ? `: "${clip(broken[0].text, 50)}"` : ''}.`
     })
   }
-  const keptCount = promises.filter((pr) => pr.followThrough === 'yes').length
+  const keptCount = commitments.filter((pr) => pr.followThrough === 'yes').length
   if (keptCount) {
     profileAdjust += Math.min(4, keptCount * 2)
     evidenceHits += 1
     reasons.push({
       kind: 'good',
-      text: `Followed through on ${keptCount} thing${keptCount === 1 ? '' : 's'} they said.`
+      text: `Followed through on ${keptCount} promise${keptCount === 1 ? '' : 's'}.`
     })
   }
-  const flaggedPromises = promises.filter((pr) => pr.flag)
+  const flaggedPromises = commitments.filter((pr) => pr.flag)
   const promiseGreen = flaggedPromises.filter((pr) => pr.flag === 'green').length
   const promiseRed = flaggedPromises.filter((pr) => pr.flag === 'red').length
   if (flaggedPromises.length) {
     reasons.push({
       kind: promiseRed > promiseGreen ? 'warn' : promiseGreen > promiseRed ? 'good' : 'unknown',
-      text: `Things they said, flagged: ${promiseGreen} green, ${promiseRed} red.`
+      text: `Promises, flagged: ${promiseGreen} green, ${promiseRed} red.`
     })
   }
 
@@ -796,8 +907,8 @@ export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
 
   // The running score: every point event you have ever tapped for this person, all-time, unbounded, no decay.
   // This is what tiers and reasons are built from; the criteria baseline above is a separate, secondary readout.
-  const pointEvents = pointEventsOf(person)
-  const score = pointScoreOf(person)
+  const pointEvents = pointEventsOf(person, dates)
+  const score = pointScoreOf(person, dates)
   const tShift = model?.thresholdShift || 0
   const tier = tierFor(score, tShift)
   if (tShift !== 0) {
@@ -821,7 +932,7 @@ export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
     })
   }
   if (!pointEvents.length) {
-    reasons.push({ kind: 'unknown', text: 'No point events logged yet: nothing tapped for effort, vibe, or red flags.' })
+    reasons.push({ kind: 'unknown', text: 'Nothing detected yet for effort, vibe, or red flags. Rate a date, add a reflection, or write what happened, and it will show up here.' })
   }
 
   // Confidence: how much real data backs this up. A single date is one observation, not proof.
@@ -864,6 +975,7 @@ export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
     moments: momentsOf(person).length,
     hangouts: hangoutsOf(person).length,
     promises: promisesOf(person).length,
+    commitments: commitmentsOf(person).length,
     plans: plansOf(person).length,
     flags: (person.tags || []).length + custom.length,
     remembered: rememberOf(person).filter((x) => x.kind !== 'note').length,
