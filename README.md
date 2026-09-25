@@ -262,6 +262,12 @@ Both "Things they said" and "Promises" can be hidden per profile from Settings, 
 
 Either kind can be marked **Cancelled** instead of Happened. A cancelled entry swaps in a short "what happened" field and a feeling picker, skips the rating and follow-up fields that would not make sense for something that did not happen, and counts against the score automatically.
 
+## The profile
+
+A profile's five sections (About, Plans, Reflections, Fit, Timeline) are true tabs: tap a pill and only that section shows, the rest stay out of the way until you need them. Nothing is deleted by switching; each keeps its own state.
+
+Every person card also carries an at-a-glance summary, the same one shown on the profile: next plan, last interaction, and the most recent thing worth remembering. It can be turned off per device from Settings, under People cards.
+
 ## Scoring
 
 Fit's score is a running, all-time point total, not a percentage, and it is entirely automatic: nothing to tap. It is read from things you already log:

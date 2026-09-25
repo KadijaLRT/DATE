@@ -29,8 +29,6 @@ const todayISO = () => todayDay()
 /* ---------- small pieces ---------- */
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])'
-const prefersReducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-
 // A dialog that behaves like one: focus moves in when it opens, Tab stays inside, Escape closes it, and focus goes back
 // to whatever opened it. An optional footer stays pinned to the bottom (for a Save button).
 function Sheet({ title, onClose, children, footer = null }) {
@@ -687,6 +685,7 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
   const [adding, setAdding] = useState(false) // false | 'moment' | 'hangout'
   const [editMoment, setEditMoment] = useState(null)
   const [photoMsg, setPhotoMsg] = useState('')
+  const [activeSection, setActiveSection] = useState('about')
   const photoRef = useRef(null)
   const show = store.data.settings.profile
   const set = (patch) => store.updatePerson(person.id, patch)
@@ -694,9 +693,7 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
   const s = statusOf(person.status)
 
   const talkedToday = (person.contacts || []).some((c) => c.date === today && !/^matched$/i.test((c.note || '').trim()))
-  const next = plansOf(person).filter((x) => x.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0]
-  const last = buildTimeline([person], dates, { personId: person.id }).find((e) => e.kind !== 'plan' && e.kind !== 'matched' && e.kind !== 'met' && e.kind !== 'startdate' && e.date && e.date <= today)
-  const highlight = [...momentsOf(person), ...hangoutsOf(person)].filter((m) => m.text).sort((a, b) => b.date.localeCompare(a.date))[0]?.text || rememberOf(person).find((r) => !r.done)?.text
+  const glance = glanceOf(person, dates, today)
   const details = [person.age && `${person.age}`, person.job, person.location, person.met && `via ${person.met}`].filter(Boolean).join(' · ')
   const fit = useMemo(() => (hasCriteria(store.data.criteria) ? evaluate(person, dates, store.data.criteria, null) : null), [person, dates, store.data.criteria])
   const score = pointScoreOf(person, dates)
@@ -709,13 +706,9 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
     { id: 'fit', label: 'Fit', on: true },
     { id: 'timeline', label: 'Timeline', on: show.timeline }
   ].filter((x) => x.on)
+  const goTo = (id) => setActiveSection(id)
+  const shownSection = sections.some((x) => x.id === activeSection) ? activeSection : 'about'
 
-  const goTo = (id) => {
-    const el = document.getElementById('sec-' + id)
-    if (!el) return
-    if (el.tagName === 'DETAILS') el.open = true
-    el.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' })
-  }
   const onPhoto = async (e) => {
     const f = e.target.files?.[0]
     e.target.value = ''
@@ -762,25 +755,27 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
         </div>
       </details>
 
-      <nav className="profile-nav" aria-label="Profile sections">
-        {sections.map((x) => <button key={x.id} type="button" onClick={() => goTo(x.id)}>{x.label}</button>)}
-      </nav>
+      <div className="profile-nav" role="tablist" aria-label="Profile sections">
+        {sections.map((x) => (
+          <button key={x.id} type="button" role="tab" aria-selected={shownSection === x.id} onClick={() => goTo(x.id)}>{x.label}</button>
+        ))}
+      </div>
 
-      <details id="sec-about" className="psec" open>
-        <summary>About them</summary>
-        <div className="pcontent">
+      {shownSection === 'about' && (
+        <div id="sec-about" className="psec" role="tabpanel">
+          <div className="pcontent">
           <dl className="glance" aria-label="At a glance">
             <div>
               <dt>Next plan</dt>
-              <dd>{next ? <>{fmtDate(next.date)}: {next.title || 'Planned date'}{next.place ? ` at ${next.place}` : ''} <span className="tag green">{daysLabel(daysBetween(today, next.date))}</span></> : 'Nothing planned'}</dd>
+              <dd>{glance.next ? <>{fmtDate(glance.next.date)}: {glance.next.title || 'Planned date'}{glance.next.place ? ` at ${glance.next.place}` : ''} <span className="tag green">{daysLabel(daysBetween(today, glance.next.date))}</span></> : 'Nothing planned'}</dd>
             </div>
             <div>
               <dt>Last interaction</dt>
-              <dd>{last ? `${agoLabel(last.date)}: ${last.kind === 'date' ? (last.title === 'Date' ? 'a date' : last.title) : last.kind === 'moment' || last.kind === 'hangout' ? last.title.toLowerCase() : last.kind === 'promise' ? 'something they said' : 'in touch'}` : 'Nothing logged yet'}</dd>
+              <dd>{glance.lastText}</dd>
             </div>
             <div>
               <dt>Worth remembering</dt>
-              <dd>{highlight ? (highlight.length > 110 ? highlight.slice(0, 110) + '…' : highlight) : 'Nothing saved yet'}</dd>
+              <dd>{glance.highlight ? (glance.highlight.length > 110 ? glance.highlight.slice(0, 110) + '…' : glance.highlight) : 'Nothing saved yet'}</dd>
             </div>
           </dl>
           <StatusPicker key={person.id + ':' + person.status} person={person} store={store} />
@@ -823,12 +818,12 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
               <FlagEditor person={person} set={set} />
             </>
           )}
+          </div>
         </div>
-      </details>
+      )}
 
-      {(show.plans || show.remember || show.promises || show.prompts) && (
-        <details id="sec-plans" className="psec">
-          <summary>Plans and reminders</summary>
+      {shownSection === 'plans' && (show.plans || show.remember || show.promises || show.prompts) && (
+        <div id="sec-plans" className="psec" role="tabpanel">
           <div className="pcontent">
             {show.plans && (
               <>
@@ -852,17 +847,18 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
             )}
             {show.prompts && <PromptSection person={person} dates={dates} store={store} />}
           </div>
-        </details>
+        </div>
       )}
 
-      <details id="sec-reflections" className="psec">
-        <summary>My reflections</summary>
-        <div className="pcontent"><ReflectionsSummary person={person} dates={dates} onEditDate={onEditDate} /></div>
-      </details>
+      {shownSection === 'reflections' && (
+        <div id="sec-reflections" className="psec" role="tabpanel">
+          <div className="pcontent"><ReflectionsSummary person={person} dates={dates} onEditDate={onEditDate} /></div>
+        </div>
+      )}
 
-      <details id="sec-fit" className="psec">
-        <summary>Compatibility</summary>
-        <div className="pcontent">
+      {shownSection === 'fit' && (
+        <div id="sec-fit" className="psec" role="tabpanel">
+          <div className="pcontent">
           {fit ? (
             <>
               <p style={{ margin: '0 0 8px' }}><strong>{VERDICT[fit.verdict].label}</strong>, with {fit.confidence} confidence.</p>
@@ -873,12 +869,12 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
             <p className="hint" style={{ margin: '0 0 8px' }}>Say what you are looking for in the Fit tab to see how this connection lines up.</p>
           )}
           <button type="button" className="btn ghost" onClick={onOpenFit}>Open in Fit</button>
+          </div>
         </div>
-      </details>
+      )}
 
-      {show.timeline && (
-        <details id="sec-timeline" className="psec">
-          <summary>Timeline</summary>
+      {shownSection === 'timeline' && show.timeline && (
+        <div id="sec-timeline" className="psec" role="tabpanel">
           <div className="pcontent">
             <ContactLog person={person} dates={dates} store={store} hideTalked />
             {(adding === 'moment' || editMoment?.kind === 'moment') ? (
@@ -914,7 +910,7 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
               />
             </div>
           </div>
-        </details>
+        </div>
       )}
 
       <div className="btnrow" style={{ marginTop: 22 }}>
@@ -1214,6 +1210,16 @@ const FOLLOW_LABEL = {
   done: 'Not continuing'
 }
 
+// The same "at a glance" summary shown on the profile: next plan, last interaction, worth remembering.
+// Shared so the card and the profile always agree.
+function glanceOf(person, dates, today) {
+  const next = plansOf(person).filter((x) => x.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0]
+  const last = buildTimeline([person], dates, { personId: person.id }).find((e) => e.kind !== 'plan' && e.kind !== 'matched' && e.kind !== 'met' && e.kind !== 'startdate' && e.date && e.date <= today)
+  const highlight = [...momentsOf(person), ...hangoutsOf(person)].filter((m) => m.text).sort((a, b) => b.date.localeCompare(a.date))[0]?.text || rememberOf(person).find((r) => !r.done)?.text
+  const lastText = last ? `${agoLabel(last.date)}: ${last.kind === 'date' ? (last.title === 'Date' ? 'a date' : last.title) : last.kind === 'moment' || last.kind === 'hangout' ? last.title.toLowerCase() : last.kind === 'promise' ? 'something they said' : 'in touch'}` : 'Nothing logged yet'
+  return { next, lastText, highlight }
+}
+
 function PersonCard({ p, dates, onOpen, store, card, view = 'card' }) {
   const s = statusOf(p.status)
   const ended = p.status === 'ended'
@@ -1225,8 +1231,7 @@ function PersonCard({ p, dates, onOpen, store, card, view = 'card' }) {
   const talkedToday = (p.contacts || []).some((c) => c.date === today && !/^matched$/i.test((c.note || '').trim()))
   const details = [p.age && `${p.age}`, p.job, p.location, p.met && `via ${p.met}`].filter(Boolean).join(', ')
   const reason = END_REASONS.find((r) => r.id === p.end?.reason)?.label
-  const next = plansOf(p).filter((x) => x.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0]
-  const open = rememberOf(p).filter((r) => !r.done)
+  const glance = glanceOf(p, dates, today)
   const all = allFlags(p, () => {})
   const g = all.filter((f) => f.kind === 'green')
   const r = all.filter((f) => f.kind === 'red')
@@ -1262,15 +1267,21 @@ function PersonCard({ p, dates, onOpen, store, card, view = 'card' }) {
           <>
             {card.details && <p className="pbio">{details || 'No details yet'}</p>}
             {ended && <p className="pmeta strong">Ended {fmtDate(p.end?.date)}{reason ? `: ${reason}` : ''}</p>}
-            {card.contact && (
-              <p className={'pmeta' + (due ? ' due' : '')}>
-                {lc ? `Last contact ${agoLabel(lc)}` : 'No contact recorded'}
-                {due ? ', maybe reply?' : ''}
-              </p>
-            )}
-            {card.plan && next && <p className="pmeta">Next plan: {next.title || 'Planned date'}, {fmtDate(next.date)}</p>}
-            {card.notes && open.length > 0 && (
-              <p className="phigh">{open[0].text}{open.length > 1 ? ` (+${open.length - 1} more)` : ''}</p>
+            {card.contact !== false && (
+              <dl className="glance card-glance" aria-label="At a glance">
+                <div>
+                  <dt>Next plan</dt>
+                  <dd>{glance.next ? <>{fmtDate(glance.next.date)}: {glance.next.title || 'Planned date'}{glance.next.place ? ` at ${glance.next.place}` : ''}</> : 'Nothing planned'}</dd>
+                </div>
+                <div>
+                  <dt>Last interaction</dt>
+                  <dd className={due ? 'due' : undefined}>{glance.lastText}{due ? ', maybe reply?' : ''}</dd>
+                </div>
+                <div>
+                  <dt>Worth remembering</dt>
+                  <dd>{glance.highlight ? (glance.highlight.length > 90 ? glance.highlight.slice(0, 90) + '…' : glance.highlight) : 'Nothing saved yet'}</dd>
+                </div>
+              </dl>
             )}
             {card.flags && shown.length > 0 && (
               <div className="mini pflags">
@@ -2925,10 +2936,8 @@ function SettingsSheet({ store, onClose, onLockNow }) {
       <div className="section">People cards</div>
       <p className="hint" style={{ marginTop: 0 }}>Choose what shows on each card in the People list. Profiles always show everything.</p>
       {cardToggle('details', 'Details on cards (age, job, location, how you met)')}
-      {cardToggle('notes', 'Remembered details on cards')}
       {cardToggle('flags', 'Green and red flags on cards')}
-      {cardToggle('contact', 'Last contact on cards')}
-      {cardToggle('plan', 'Next plan on cards')}
+      {cardToggle('contact', 'At a glance on cards (next plan, last interaction, worth remembering)')}
       {cardToggle('photos', 'Photos on cards')}
       <p className="hint" style={{ marginTop: 4 }}>Turn photos off if others might see your screen. They are kept and still show on profiles.</p>
 

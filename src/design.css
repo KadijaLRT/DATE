@@ -151,6 +151,13 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
 .pbio { margin: var(--s1) 0 var(--s2); font-size: var(--fs-small); color: #4a3d43; line-height: 1.4; }
 .pmeta { margin: var(--s1) 0 0; font-size: var(--fs-meta); color: var(--stone); }
 .pmeta.due { color: var(--rose-ink); font-weight: 700; }
+.card-glance { margin: var(--s2) 0 0; padding: var(--s3); }
+.card-glance div { margin-bottom: var(--s2); }
+.card-glance div:last-child { margin-bottom: 0; }
+.card-glance dt { font-size: 11px; }
+.card-glance dd { font-size: var(--fs-meta); }
+.card-glance dd.due { color: var(--rose-ink); font-weight: 700; }
+.people-grid .card-glance { display: none; }
 .pmeta.strong { color: var(--ink); }
 .phigh { margin: var(--s2) 0 0; font-size: var(--fs-small); font-style: italic; color: #4a3d43; }
 .pflags { margin-top: var(--s3); }
@@ -193,12 +200,9 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
 .glance dd { margin: 2px 0 0; font-size: var(--fs-body); overflow-wrap: anywhere; }
 .profile-nav { position: sticky; top: calc(-1 * var(--s5)); z-index: 4; display: flex; gap: var(--s2); overflow-x: auto; padding: var(--s2) var(--s5); margin: 0 calc(-1 * var(--s5)) var(--s2); background: rgba(250, 245, 241, 0.96); backdrop-filter: blur(8px); scrollbar-width: none; }
 .profile-nav::-webkit-scrollbar { display: none; }
-.profile-nav button { flex: 0 0 auto; min-height: 44px; padding: 0 var(--s4); border-radius: 999px; background: var(--card); border: 1.5px solid #d9c9c3; font-weight: 600; font-size: var(--fs-small); }
-details.psec { background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow-card); margin: var(--s3) 0; scroll-margin-top: 64px; }
-details.psec > summary { display: flex; align-items: center; gap: var(--s3); min-height: 60px; padding: 0 var(--s5); font-family: var(--display); font-size: 20px; font-weight: 500; cursor: pointer; list-style: none; }
-details.psec > summary::-webkit-details-marker { display: none; }
-details.psec > summary::after { content: '\25B8'; margin-left: auto; color: var(--rose-ink); transition: transform .18s ease; }
-details.psec[open] > summary::after { transform: rotate(90deg); }
+.profile-nav button { flex: 0 0 auto; min-height: 44px; padding: 0 var(--s4); border-radius: 999px; background: var(--card); border: 1.5px solid #d9c9c3; font-weight: 600; font-size: var(--fs-small); transition: background-color .15s ease, color .15s ease, border-color .15s ease; }
+.profile-nav button[aria-selected='true'] { background: #2b1b2e; border-color: #2b1b2e; color: #fff; }
+.psec { background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow-card); margin: var(--s3) 0; animation: fadeUp .16s ease-out; }
 .pcontent { padding: 0 var(--s5) var(--s5); }
 .pcontent > .section:first-child { margin-top: 0; }
 .refl-item { border-bottom: 1px solid var(--line); padding: var(--s3) 0; }
