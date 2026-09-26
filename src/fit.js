@@ -43,7 +43,7 @@ export const TRAITS = [
     id: 'respect',
     label: 'Respectful and considerate',
     avoidLabel: 'Rude, controlling, or self-centered',
-    tags: [],
+    tags: ['respectful'],
     badTags: ['pushy', 'selfabsorbed'],
     words: ['respectful', 'kind', 'considerate', 'listens', 'asked about me', 'thoughtful', 'polite', 'genuine'],
     badWords: ['rude', 'talked over', 'only talked about himself', 'only talked about herself', 'disrespect', 'disrespectful', 'condescending', 'controlling', 'entitled', 'arrogant', 'selfish', 'self-absorbed', 'self-centered', 'manipulative', 'egotistical', 'narcissist', 'narcissistic', 'possessive', 'pushy']
@@ -61,8 +61,8 @@ export const TRAITS = [
     id: 'family',
     label: 'Family-oriented / open to kids',
     avoidLabel: 'Against kids or family',
-    tags: [],
-    badTags: [],
+    tags: ['family'],
+    badTags: ['antifamily'],
     words: ['family', 'kids', 'wants kids', 'good with kids', 'close with his mom', 'close with her mom'],
     badWords: ['no kids ever', 'doesn\'t want kids', 'does not want kids', 'hates kids']
   },
@@ -70,8 +70,8 @@ export const TRAITS = [
     id: 'stable',
     label: 'Emotionally stable and mature',
     avoidLabel: 'Dramatic or emotionally unstable',
-    tags: [],
-    badTags: [],
+    tags: ['stable'],
+    badTags: ['dramatic'],
     words: ['mature', 'stable', 'calm', 'emotionally intelligent', 'self aware', 'therapy', 'healthy'],
     badWords: ['drama', 'dramatic', 'temper', 'jealous', 'angry', 'unstable', 'toxic', 'clingy', 'needy', 'moody', 'insecure', 'emotional baggage', 'mean about his ex', 'mean about her ex']
   },
@@ -79,8 +79,8 @@ export const TRAITS = [
     id: 'quality_time',
     label: 'Spends quality time together',
     avoidLabel: 'Rarely makes time to hang out',
-    tags: [],
-    badTags: [],
+    tags: ['quality_time'],
+    badTags: ['notime'],
     words: ['hung out', 'hang out', 'spent the day', 'spent the evening', 'watched a movie', 'cooked together', 'went for a walk', 'came over', 'stayed in'],
     badWords: ['never has time', 'always busy', 'never free', 'no time for me', 'wont hang out', "won't hang out", 'never makes time']
   }
@@ -92,13 +92,36 @@ export const TAGS = [
   { id: 'dogs', label: 'Dog lover', kind: 'green' },
   { id: 'funny', label: 'Funny', kind: 'green' },
   { id: 'ambitious', label: 'Ambitious', kind: 'green' },
+  { id: 'respectful', label: 'Respectful and considerate', kind: 'green' },
+  { id: 'family', label: 'Family-oriented', kind: 'green' },
+  { id: 'stable', label: 'Emotionally stable', kind: 'green' },
+  { id: 'quality_time', label: 'Makes time for me', kind: 'green' },
   { id: 'inconsistent', label: 'Inconsistent', kind: 'red' },
   { id: 'slowreply', label: 'Slow replies', kind: 'red' },
   { id: 'vague', label: 'Vague plans', kind: 'red' },
   { id: 'selfabsorbed', label: 'Self-focused', kind: 'red' },
-  { id: 'pushy', label: 'Pushy', kind: 'red' }
+  { id: 'pushy', label: 'Pushy', kind: 'red' },
+  { id: 'antifamily', label: 'Against kids or family', kind: 'red' },
+  { id: 'dramatic', label: 'Dramatic or unstable', kind: 'red' },
+  { id: 'notime', label: 'Never makes time', kind: 'red' }
 ]
 const TAG_LABEL = Object.fromEntries(TAGS.map((t) => [t.id, t.label]))
+
+// Every tag id is required to be some trait's tags/badTags entry (this is checked below, in dev), so "which tags
+// count as built-in green/red" is always derived from TRAITS, never a separately hand-kept list that can drift.
+const BUILTIN_GREEN_TAGS = new Set(TRAITS.flatMap((t) => t.tags))
+const BUILTIN_RED_TAGS = new Set(TRAITS.flatMap((t) => t.badTags))
+if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
+  for (const t of TAGS) {
+    if (!BUILTIN_GREEN_TAGS.has(t.id) && !BUILTIN_RED_TAGS.has(t.id)) {
+      console.warn(`fit.js: tag "${t.id}" is not linked to any trait's tags/badTags.`)
+    }
+  }
+  const allTraitTagIds = new Set([...BUILTIN_GREEN_TAGS, ...BUILTIN_RED_TAGS])
+  for (const id of allTraitTagIds) {
+    if (!TAG_LABEL[id]) console.warn(`fit.js: trait tag "${id}" has no entry in TAGS, so it has no button.`)
+  }
+}
 
 /**
  * Moments: things you record on a profile that are not a date or a contact, each with a day, a kind, some text,
@@ -296,8 +319,8 @@ export function pointEventsOf(person, dates = []) {
   // on the day it was first logged (or today, for older data with no such stamp), so tagging cannot be farmed for
   // repeated points the way a long paragraph is capped to one hit per direction.
   const flagDay = validDay(person?.flaggedOn) ? person.flaggedOn : localToday()
-  const builtinGreenTags = new Set(['communicator', 'consistent', 'dogs', 'funny', 'ambitious'])
-  const builtinRedTags = new Set(['inconsistent', 'slowreply', 'vague', 'selfabsorbed', 'pushy'])
+  const builtinGreenTags = BUILTIN_GREEN_TAGS
+  const builtinRedTags = BUILTIN_RED_TAGS
   ;(person?.tags || []).forEach((t) => {
     if (builtinGreenTags.has(t)) push(flagDay, 'flagged_green')
     else if (builtinRedTags.has(t)) push(flagDay, 'flagged_red')
@@ -942,8 +965,8 @@ export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
 
   // Built-in and custom green/red flags on the profile are part of the criteria baseline too: a weight-2 slot,
   // same footprint they always had.
-  const builtinGreen = (person.tags || []).filter((t) => ['communicator', 'consistent', 'dogs', 'funny', 'ambitious'].includes(t)).length
-  const builtinRed = (person.tags || []).filter((t) => ['inconsistent', 'slowreply', 'vague', 'selfabsorbed', 'pushy'].includes(t)).length
+  const builtinGreen = (person.tags || []).filter((t) => BUILTIN_GREEN_TAGS.has(t)).length
+  const builtinRed = (person.tags || []).filter((t) => BUILTIN_RED_TAGS.has(t)).length
   const custom = customFlagsOf(person)
   const customGreen = custom.filter((f) => f.kind === 'green').length
   const customRed = custom.filter((f) => f.kind === 'red').length

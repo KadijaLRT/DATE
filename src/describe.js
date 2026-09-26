@@ -54,7 +54,8 @@ const DESCRIBE = {
   respect: ['respect', 'kind', 'considerate', 'thoughtful', 'listens', 'polite', 'genuine', 'treats me well', 'treats people well', 'humble'],
   plans: ['makes plans', 'plans dates', 'plans ahead', 'takes initiative', 'initiative', 'follows up on plans', 'plan things'],
   family: ['family', 'kids', 'children', 'wants a family', 'good with kids', 'close with'],
-  stable: ['mature', 'stable', 'emotionally', 'calm', 'secure', 'therapy', 'self-aware', 'self aware', 'healthy', 'grounded']
+  stable: ['mature', 'stable', 'emotionally', 'calm', 'secure', 'therapy', 'self-aware', 'self aware', 'healthy', 'grounded'],
+  quality_time: ['quality time', 'hangs out', 'hang out', 'spends time', 'makes time', 'always around', 'together often']
 }
 
 // The BAD side of each quality comes from TRAITS[].badWords: the same list the scorer uses, so a don't-want the
