@@ -6,7 +6,7 @@ export const DEFAULT_SETTINGS = {
   peopleView: 'card',
   home: { hero: true, week: true },
   // Which sections appear on a profile. Hidden sections keep their data and still count in Fit.
-  profile: { flags: true, plans: true, remember: true, promises: true, prompts: true, timeline: true },
+  profile: { flags: true, plans: true, remember: true, promises: true, prompts: true, timeline: true, intimacy: true },
   // How many days before a plan the Today screen starts reminding you (0 = only on the day).
   reminderDays: 2,
   // Lock again after the app has been in the background this long. 0 = every time you leave it.

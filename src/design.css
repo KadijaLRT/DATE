@@ -219,6 +219,15 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
 details.fitfold, details.fold { border-radius: var(--r-lg); }
 details.fitfold > summary, details.fold > summary { min-height: 48px; }
 
+/* ---------- collapsible profile subsections ---------- */
+details.subsec { margin: var(--s5) 0 var(--s2); }
+details.subsec:first-child { margin-top: 0; }
+details.subsec > summary { display: flex; align-items: center; justify-content: space-between; min-height: 44px; font-size: var(--fs-h2); font-weight: 500; cursor: pointer; list-style: none; }
+details.subsec > summary::-webkit-details-marker { display: none; }
+.subsec-chev { transition: transform .18s ease; flex: 0 0 auto; }
+details.subsec[open] > summary .subsec-chev { transform: rotate(90deg); }
+.subsec-body { margin-top: var(--s2); }
+
 /* ---------- motion (all of it switches off for people who ask) ---------- */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

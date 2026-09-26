@@ -264,9 +264,15 @@ Either kind can be marked **Cancelled** instead of Happened. A cancelled entry s
 
 ## The profile
 
-A profile's five sections (About, Plans, Reflections, Fit, Timeline) are true tabs: tap a pill and only that section shows, the rest stay out of the way until you need them. Nothing is deleted by switching; each keeps its own state.
+A profile's sections (About, Plans, Reflections, Intimacy, Fit, Timeline) are true tabs: tap a pill and only that section shows, the rest stay out of the way until you need them. Nothing is deleted by switching; each keeps its own state. The at-a-glance summary (next plan, last interaction, most recent thing worth remembering) sits above the tabs, visible on every one of them.
 
-Every person card also carries an at-a-glance summary, the same one shown on the profile: next plan, last interaction, and the most recent thing worth remembering. It can be turned off per device from Settings, under People cards.
+Within About and Plans, individual sections (green and red flags, plan a date, remember for next time, things they said, promises) are collapsible: tap the heading to fold or unfold it.
+
+Every person card also carries the same at-a-glance summary shown on the profile. It can be turned off per device from Settings, under People cards.
+
+## Intimacy
+
+A private log, its own tab, kept out of the shared timeline and off person cards. Each entry has a date, an optional 1-5 rating, and an optional note. An average rating feeds Fit the same way date ratings do: a high average counts toward compatibility, a low one counts against it, and the notes are read for the same vibe and red-flag language as everything else you write.
 
 ## Scoring
 

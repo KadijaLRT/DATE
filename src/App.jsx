@@ -18,7 +18,7 @@ import { LOCK_CHOICES } from './settings.js'
 import { hasPin, setPin, verifyPin, clearPin, waitLeft, recordFail, resetFails, PIN_RE } from './lock.js'
 import { PROMPT_CATEGORIES, candidates as promptCandidates, usedPromptIds } from './prompts.js'
 import { encryptBackup, decryptBackup, isEncryptedBackup, MIN_PASSPHRASE } from './vault.js'
-import { plansOf, rememberOf, reflectionOf, REMEMBER_KINDS, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS, MAX_PLAN_TEXT, MAX_REMEMBER_TEXT, MAX_REFLECTION_NOTE, MAX_REFLECTION_JOURNAL, momentsOf, hangoutsOf, promisesOf, commitmentsOf, pointEventsOf, pointScoreOf, tierFor, FEELINGS, MOMENT_TYPES, HANGOUT_TYPES, HANGOUT_STATUS, FOLLOW_THROUGH, MAX_MOMENT_TEXT, MAX_HANGOUT_TEXT, MAX_PROMISE_TEXT, MAX_COMMITMENT_TEXT, customFlagsOf, MAX_CUSTOM_FLAGS, MAX_FLAG_LENGTH, TRAITS, WANT_LEVELS, AVOID_LEVELS, VERDICT, SOFT_PENALTY, evaluate, hasCriteria, normalizeCriteria, splitWords, wordHits } from './fit.js'
+import { plansOf, rememberOf, reflectionOf, REMEMBER_KINDS, REFLECTION_QUESTIONS, REFLECTION_ANSWERS, AGAIN_ANSWERS, MAX_PLAN_TEXT, MAX_REMEMBER_TEXT, MAX_REFLECTION_NOTE, MAX_REFLECTION_JOURNAL, momentsOf, hangoutsOf, intimacyOf, promisesOf, commitmentsOf, pointEventsOf, pointScoreOf, tierFor, FEELINGS, MOMENT_TYPES, HANGOUT_TYPES, HANGOUT_STATUS, FOLLOW_THROUGH, MAX_MOMENT_TEXT, MAX_HANGOUT_TEXT, MAX_PROMISE_TEXT, MAX_COMMITMENT_TEXT, MAX_INTIMACY_TEXT, customFlagsOf, MAX_CUSTOM_FLAGS, MAX_FLAG_LENGTH, TRAITS, WANT_LEVELS, AVOID_LEVELS, VERDICT, SOFT_PENALTY, evaluate, hasCriteria, normalizeCriteria, splitWords, wordHits } from './fit.js'
 import { buildModel, adjustedWeight, MIN_FEEDBACK } from './learn.js'
 import { parseDescription } from './describe.js'
 
@@ -703,6 +703,7 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
     { id: 'about', label: 'About', on: true },
     { id: 'plans', label: 'Plans', on: show.plans || show.remember || show.promises || show.prompts },
     { id: 'reflections', label: 'Reflections', on: true },
+    { id: 'intimacy', label: 'Intimacy', on: show.intimacy },
     { id: 'fit', label: 'Fit', on: true },
     { id: 'timeline', label: 'Timeline', on: show.timeline }
   ].filter((x) => x.on)
@@ -755,6 +756,21 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
         </div>
       </details>
 
+      <dl className="glance" aria-label="At a glance">
+        <div>
+          <dt>Next plan</dt>
+          <dd>{glance.next ? <>{fmtDate(glance.next.date)}: {glance.next.title || 'Planned date'}{glance.next.place ? ` at ${glance.next.place}` : ''} <span className="tag green">{daysLabel(daysBetween(today, glance.next.date))}</span></> : 'Nothing planned'}</dd>
+        </div>
+        <div>
+          <dt>Last interaction</dt>
+          <dd>{glance.lastText}</dd>
+        </div>
+        <div>
+          <dt>Worth remembering</dt>
+          <dd>{glance.highlight ? (glance.highlight.length > 110 ? glance.highlight.slice(0, 110) + '…' : glance.highlight) : 'Nothing saved yet'}</dd>
+        </div>
+      </dl>
+
       <div className="profile-nav" role="tablist" aria-label="Profile sections">
         {sections.map((x) => (
           <button key={x.id} type="button" role="tab" aria-selected={shownSection === x.id} onClick={() => goTo(x.id)}>{x.label}</button>
@@ -764,20 +780,6 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
       {shownSection === 'about' && (
         <div id="sec-about" className="psec" role="tabpanel">
           <div className="pcontent">
-          <dl className="glance" aria-label="At a glance">
-            <div>
-              <dt>Next plan</dt>
-              <dd>{glance.next ? <>{fmtDate(glance.next.date)}: {glance.next.title || 'Planned date'}{glance.next.place ? ` at ${glance.next.place}` : ''} <span className="tag green">{daysLabel(daysBetween(today, glance.next.date))}</span></> : 'Nothing planned'}</dd>
-            </div>
-            <div>
-              <dt>Last interaction</dt>
-              <dd>{glance.lastText}</dd>
-            </div>
-            <div>
-              <dt>Worth remembering</dt>
-              <dd>{glance.highlight ? (glance.highlight.length > 110 ? glance.highlight.slice(0, 110) + '…' : glance.highlight) : 'Nothing saved yet'}</dd>
-            </div>
-          </dl>
           <StatusPicker key={person.id + ':' + person.status} person={person} store={store} />
           <label className="field">
             <span>Name</span>
@@ -813,10 +815,9 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
           </label>
           {person.relationshipStartDate && <p className="hint" style={{ margin: '-8px 0 16px' }}>Suggested automatically when a profile first reaches Dating; change or clear it any time.</p>}
           {show.flags && (
-            <>
-              <div className="section">Green and red flags</div>
+            <Collapsible title="Green and red flags">
               <FlagEditor person={person} set={set} />
-            </>
+            </Collapsible>
           )}
           </div>
         </div>
@@ -826,23 +827,23 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
         <div id="sec-plans" className="psec" role="tabpanel">
           <div className="pcontent">
             {show.plans && (
-              <>
-                <div className="section">Plan a date</div>
+              <Collapsible title="Plan a date">
                 <PlanSection person={person} store={store} onLogDate={onLogDate} />
-              </>
+              </Collapsible>
             )}
             {show.remember && (
-              <>
-                <div className="section">Remember for next time</div>
+              <Collapsible title="Remember for next time">
                 <RememberSection person={person} store={store} />
-              </>
+              </Collapsible>
             )}
             {show.promises && (
               <>
-                <div className="section">Things they said</div>
-                <ThingsTheySaidSection person={person} store={store} />
-                <div className="section">Promises</div>
-                <PromisesTracker person={person} store={store} />
+                <Collapsible title="Things they said">
+                  <ThingsTheySaidSection person={person} store={store} />
+                </Collapsible>
+                <Collapsible title="Promises">
+                  <PromisesTracker person={person} store={store} />
+                </Collapsible>
               </>
             )}
             {show.prompts && <PromptSection person={person} dates={dates} store={store} />}
@@ -853,6 +854,12 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
       {shownSection === 'reflections' && (
         <div id="sec-reflections" className="psec" role="tabpanel">
           <div className="pcontent"><ReflectionsSummary person={person} dates={dates} onEditDate={onEditDate} /></div>
+        </div>
+      )}
+
+      {shownSection === 'intimacy' && show.intimacy && (
+        <div id="sec-intimacy" className="psec" role="tabpanel">
+          <div className="pcontent"><IntimacyTracker person={person} store={store} /></div>
         </div>
       )}
 
@@ -2556,6 +2563,84 @@ function PromisesTracker({ person, store }) {
         </div>
       ) : (
         <button type="button" className="btn ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => setOpen(true)}><HeartHandshake size={18} /> Add a promise</button>
+      )}
+    </div>
+  )
+}
+
+// Collapsible section wrapper for profile tab content.
+function Collapsible({ title, startOpen = true, children }) {
+  return (
+    <details className="subsec" open={startOpen}>
+      <summary>{title}<ChevronRight size={16} className="subsec-chev" aria-hidden="true" /></summary>
+      <div className="subsec-body">{children}</div>
+    </details>
+  )
+}
+
+function IntimacyTracker({ person, store }) {
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [day, setDay] = useState(todayDay())
+  const [rating, setRating] = useState(0)
+  const [text, setText] = useState('')
+  const [msg, setMsg] = useState('')
+  const items = intimacyOf(person).slice().sort((a, b) => b.date.localeCompare(a.date))
+  const rated = items.filter((x) => x.rating > 0)
+  const avg = rated.length ? rated.reduce((s, x) => s + x.rating, 0) / rated.length : 0
+
+  const reset = () => { setDay(todayDay()); setRating(0); setText(''); setMsg(''); setOpen(false); setEditing(null) }
+  const startEdit = (x) => { setEditing(x); setDay(x.date); setRating(x.rating || 0); setText(x.text || ''); setOpen(true) }
+  const save = () => {
+    if (!day) return setMsg('Pick a day, then save.')
+    if (day > todayDay()) return setMsg('That has not happened yet. Pick today or earlier.')
+    if (!rating && !text.trim()) return setMsg('Add a rating or a note, then save.')
+    const payload = { date: day, rating, text: text.trim().slice(0, MAX_INTIMACY_TEXT) }
+    if (editing) store.updateIntimacy(person.id, editing.id, payload)
+    else store.addIntimacy(person.id, payload)
+    reset()
+  }
+
+  return (
+    <div>
+      <p className="hint" style={{ margin: '0 0 8px' }}>Private to you. Not shown on cards or in the shared timeline.</p>
+      {rated.length > 0 && <p style={{ margin: '0 0 10px' }}>Averaging <strong>{avg.toFixed(1)} of 5</strong> across {rated.length} entr{rated.length === 1 ? 'y' : 'ies'}.</p>}
+      {items.length === 0 && !open && (
+        <p className="hint" style={{ margin: '0 0 8px' }}>Nothing logged yet.</p>
+      )}
+      {items.length > 0 && (
+        <ul className="notes" aria-label="Intimacy log">
+          {items.map((x) => (
+            <li key={x.id} style={{ alignItems: 'flex-start' }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <strong>{fmtDate(x.date)}</strong>
+                {x.rating > 0 && <><br /><StarsStatic value={x.rating} /></>}
+                {x.text && <><br />{x.text}</>}
+                {' '}<button type="button" className="tl-link" onClick={() => startEdit(x)}>Edit</button>
+              </span>
+              <button className="icon-btn" aria-label={`Remove entry from ${fmtDate(x.date)}`} onClick={() => store.deleteIntimacy(person.id, x.id)}><X size={16} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {open ? (
+        <div className="stat" style={{ marginTop: 10 }}>
+          <h4>{editing ? 'Edit entry' : 'Add an entry'}</h4>
+          <label className="field"><span>Date</span>
+            <input className="in" type="date" max={todayDay()} value={day} onChange={(e) => { setDay(e.target.value); setMsg('') }} /></label>
+          <span className="lbl" style={{ marginTop: 10 }}>Rating</span>
+          <Stars value={rating} onChange={(v) => { setRating(v); setMsg('') }} />
+          <label className="field" style={{ marginTop: 10 }}><span>Note (optional)</span>
+            <textarea className="in" maxLength={MAX_INTIMACY_TEXT} value={text} placeholder="Anything worth remembering."
+              {...errProps('intimacy-err', msg)} onChange={(e) => { setText(e.target.value); setMsg('') }} /></label>
+          <FieldError id="intimacy-err" msg={msg} />
+          <div className="btnrow">
+            <button type="button" className="btn ghost" onClick={reset}>Cancel</button>
+            <button type="button" className="btn primary" onClick={save}>{editing ? 'Save changes' : 'Save'}</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="btn ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => setOpen(true)}>Add an entry</button>
       )}
     </div>
   )

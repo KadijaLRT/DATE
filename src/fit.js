@@ -265,6 +265,12 @@ export function pointEventsOf(person, dates = []) {
     const hits = []; scanText(h.text, hits); hits.forEach((k) => push(h.date, k))
   }
 
+  for (const x of intimacyOf(person)) {
+    if (x.rating >= 4) push(x.date, 'chemistry')
+    else if (x.rating >= 1 && x.rating <= 2) push(x.date, 'hot_cold')
+    const hits = []; scanText(x.text, hits); hits.forEach((k) => push(x.date, k))
+  }
+
   for (const pr of promisesOf(person)) {
     const hits = []; scanText(pr.text, hits); hits.forEach((k) => push(pr.date, k))
   }
@@ -381,6 +387,30 @@ export function hangoutsOf(person) {
     out.push({ id, date: h.date, type: HANGOUT_TYPE_IDS.has(h.type) ? h.type : 'inperson', text, feeling, status })
   })
   return out.slice(0, MAX_HANGOUTS)
+}
+
+/**
+ * Intimacy log: private rating + note entries over time, kept out of the shared timeline.
+ */
+export const MAX_INTIMACY = 200
+export const MAX_INTIMACY_TEXT = 400
+
+export function intimacyOf(person) {
+  const raw = Array.isArray(person?.intimacy) ? person.intimacy : []
+  const out = []
+  const seen = new Set()
+  raw.forEach((x, i) => {
+    if (!x || typeof x !== 'object' || !validDay(x.date)) return
+    const text = typeof x.text === 'string' ? x.text.trim().slice(0, MAX_INTIMACY_TEXT) : ''
+    let rating = Number.isFinite(x.rating) ? Math.round(x.rating) : 0
+    if (rating < 0 || rating > 5) rating = 0
+    if (!rating && !text) return
+    let id = typeof x.id === 'string' && x.id ? x.id : `in-${i}`
+    while (seen.has(id)) id += '_'
+    seen.add(id)
+    out.push({ id, date: x.date, rating, text })
+  })
+  return out.slice(0, MAX_INTIMACY)
 }
 
 /**
@@ -585,7 +615,7 @@ function hasUnnegated(text, phrase) {
 
 function evidenceText(person, dates) {
   const mine = dates.filter((d) => d.personId === person.id)
-  const parts = [...(person.notes || []), person.met, person.job, ...realContacts(person).map((c) => c.note), ...momentsOf(person).map((m) => m.text), ...hangoutsOf(person).map((h) => h.text), ...promisesOf(person).map((pr) => pr.text), ...commitmentsOf(person).map((cm) => cm.text), ...plansOf(person).flatMap((x) => [x.title, x.place]), ...rememberOf(person).map((x) => x.text)]
+  const parts = [...(person.notes || []), person.met, person.job, ...realContacts(person).map((c) => c.note), ...momentsOf(person).map((m) => m.text), ...hangoutsOf(person).map((h) => h.text), ...intimacyOf(person).map((x) => x.text), ...promisesOf(person).map((pr) => pr.text), ...commitmentsOf(person).map((cm) => cm.text), ...plansOf(person).flatMap((x) => [x.title, x.place]), ...rememberOf(person).map((x) => x.text)]
   mine.forEach((d) => {
     parts.push(d.activity)
     const rf = reflectionOf(d)
@@ -609,6 +639,7 @@ function evidenceSegments(person, dates) {
   realContacts(person).filter((c) => !isSystemContact(c)).forEach((c) => push('a contact note', c.note))
   momentsOf(person).forEach((m) => push('a moment', m.text))
   hangoutsOf(person).forEach((h) => push('time together', h.text))
+  intimacyOf(person).forEach((x) => push('a private note', x.text))
   promisesOf(person).forEach((pr) => push('something they said', pr.text))
   commitmentsOf(person).forEach((cm) => push('a promise', cm.text))
   plansOf(person).forEach((x) => { push('a plan', x.title); push('a plan', x.place) })
@@ -691,6 +722,8 @@ export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
   const mine = dates.filter((d) => d.personId === person.id)
   const ratings = mine.filter((d) => d.rating > 0).map((d) => d.rating)
   const avgRating = ratings.length ? ratings.reduce((a, b) => a + b, 0) / ratings.length : null
+  const intimacyRatings = intimacyOf(person).filter((x) => x.rating > 0).map((x) => x.rating)
+  const avgIntimacy = intimacyRatings.length ? intimacyRatings.reduce((a, b) => a + b, 0) / intimacyRatings.length : null
 
   const reasons = []
   const adjustments = []
@@ -827,6 +860,14 @@ export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
     if (avgRating >= 4) reasons.push({ kind: 'good', text: `Your dates with them average ${avgRating.toFixed(1)} of 5.` })
     else if (avgRating <= 2.5) reasons.push({ kind: 'bad', text: `Your dates with them average only ${avgRating.toFixed(1)} of 5.` })
     else reasons.push({ kind: 'warn', text: `Your dates with them average ${avgRating.toFixed(1)} of 5, a middling result.` })
+  }
+
+  if (avgIntimacy !== null) {
+    possible += 2
+    earned += 2 * ((avgIntimacy - 1) / 4)
+    if (avgIntimacy >= 4) reasons.push({ kind: 'good', text: `Intimacy averages ${avgIntimacy.toFixed(1)} of 5.` })
+    else if (avgIntimacy <= 2.5) reasons.push({ kind: 'bad', text: `Intimacy averages only ${avgIntimacy.toFixed(1)} of 5.` })
+    else reasons.push({ kind: 'warn', text: `Intimacy averages ${avgIntimacy.toFixed(1)} of 5, a middling result.` })
   }
 
   // Small baseline adjustments (up to 8 points total either way) from things already logged elsewhere in the app:
@@ -974,6 +1015,7 @@ export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
     contacts: touch.length,
     moments: momentsOf(person).length,
     hangouts: hangoutsOf(person).length,
+    intimacy: intimacyOf(person).length,
     promises: promisesOf(person).length,
     commitments: commitmentsOf(person).length,
     plans: plansOf(person).length,
@@ -996,6 +1038,7 @@ export function evaluate(person, dates, rawCriteria, model = null, _opts = {}) {
     unknowns,
     evidence,
     avgRating,
+    avgIntimacy,
     dateCount: mine.length,
     pointEvents,
     adjustments
@@ -1007,7 +1050,7 @@ const order = { bad: 0, warn: 1, good: 2, unknown: 3 }
 export function sectionOf(r) {
   if (r.kind === 'unknown' && /nothing recorded yet/.test(r.text)) return 'unknowns'
   if (/^(Effort and consistency|Vibe and compatibility|Red flags and disrespect|No point events logged)/.test(r.text)) return 'points'
-  if (/^(How you have felt|Your dates with them average|Did not follow through on|Followed through on)/.test(r.text)) return 'experience'
+  if (/^(How you have felt|Your dates with them average|Intimacy averages|Did not follow through on|Followed through on)/.test(r.text)) return 'experience'
   return 'compatibility'
 }
 const flagRank = (f) => (f.side === 'avoid' ? (f.level === 'redline' ? 0 : 1) : 2)

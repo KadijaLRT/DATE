@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, hangoutsOf, promisesOf, commitmentsOf, plansOf, rememberOf, reflectionOf, TAGS, validDay } from './fit.js'
+import { emptyCriteria, normalizeCriteria, customFlagsOf, momentsOf, hangoutsOf, intimacyOf, promisesOf, commitmentsOf, plansOf, rememberOf, reflectionOf, TAGS, validDay } from './fit.js'
 import { normalizeSettings } from './settings.js'
 import { cleanPhoto } from './photos.js'
 
@@ -127,6 +127,7 @@ export function migratePerson(p) {
     photo: cleanPhoto(rest.photo),
     moments: momentsOf(rest),
     hangouts: hangoutsOf(rest),
+    intimacy: intimacyOf(rest),
     promises: promisesOf(rest),
     commitments: commitmentsOf(rest),
     metDate: validDay(rest.metDate) ? rest.metDate : '',
@@ -190,6 +191,7 @@ export function useStore() {
       relationshipStartDate: '',
       moments: [],
       hangouts: [],
+      intimacy: [],
       promises: [],
       commitments: [],
       plans: [],
@@ -296,6 +298,22 @@ export function useStore() {
       people: d.people.map((p) => (p.id === personId ? { ...p, hangouts: hangoutsOf(p).filter((h) => h.id !== hangoutId) } : p))
     }))
 
+  const addIntimacy = (personId, x) => {
+    notify('Saved')
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) =>
+        p.id === personId ? { ...p, intimacy: intimacyOf({ intimacy: [...intimacyOf(p), { id: uid(), ...x }] }) } : p
+      )
+    }))
+  }
+
+  const rawDeleteIntimacy = (personId, entryId) =>
+    setData((d) => ({
+      ...d,
+      people: d.people.map((p) => (p.id === personId ? { ...p, intimacy: intimacyOf(p).filter((x) => x.id !== entryId) } : p))
+    }))
+
   const addPromise = (personId, pr) => {
     notify('Saved')
     setData((d) => ({
@@ -368,6 +386,7 @@ export function useStore() {
   const deleteContact = (personId, contactId) => undoable('Contact deleted', () => rawDeleteContact(personId, contactId))
   const deleteMoment = (personId, momentId) => undoable('Moment deleted', () => rawDeleteMoment(personId, momentId))
   const deleteHangout = (personId, hangoutId) => undoable('Time together deleted', () => rawDeleteHangout(personId, hangoutId))
+  const deleteIntimacy = (personId, entryId) => undoable('Removed', () => rawDeleteIntimacy(personId, entryId))
   const deletePromise = (personId, promiseId) => undoable('Removed', () => rawDeletePromise(personId, promiseId))
   const deleteCommitment = (personId, commitmentId) => undoable('Promise removed', () => rawDeleteCommitment(personId, commitmentId))
   const eraseEverything = () => undoable('Everything erased', () => setData({ ...empty, settings: dataRef.current.settings }))
@@ -379,6 +398,8 @@ export function useStore() {
     patchPerson(personId, (p) => ({ moments: momentsOf({ moments: momentsOf(p).map((m) => (m.id === momentId ? { ...m, ...patch } : m)) }) }))
   const updateHangout = (personId, hangoutId, patch) =>
     patchPerson(personId, (p) => ({ hangouts: hangoutsOf({ hangouts: hangoutsOf(p).map((h) => (h.id === hangoutId ? { ...h, ...patch } : h)) }) }))
+  const updateIntimacy = (personId, entryId, patch) =>
+    patchPerson(personId, (p) => ({ intimacy: intimacyOf({ intimacy: intimacyOf(p).map((x) => (x.id === entryId ? { ...x, ...patch } : x)) }) }))
   const updatePromise = (personId, promiseId, patch) =>
     patchPerson(personId, (p) => ({ promises: promisesOf({ promises: promisesOf(p).map((pr) => (pr.id === promiseId ? { ...pr, ...patch } : pr)) }) }))
   const updateCommitment = (personId, commitmentId, patch) =>
@@ -449,6 +470,9 @@ export function useStore() {
     addHangout,
     updateHangout,
     deleteHangout,
+    addIntimacy,
+    updateIntimacy,
+    deleteIntimacy,
     addPromise,
     updatePromise,
     deletePromise,
