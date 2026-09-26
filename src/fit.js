@@ -123,6 +123,14 @@ const MOMENT_TYPE_IDS = new Set(MOMENT_TYPES.map((t) => t.id))
 const FEELING_VALUE = Object.fromEntries(FEELINGS.map((f) => [f.id, f.value]))
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
 export const validDay = (d) => typeof d === 'string' && DAY_RE.test(d) && !Number.isNaN(Date.parse(d + 'T00:00:00Z'))
+// Local calendar day, kept separate from store.js's own todayDay to avoid a circular import; same logic (local, not UTC).
+function localToday() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 export function momentsOf(person) {
   const raw = Array.isArray(person?.moments) ? person.moments : []
@@ -182,7 +190,10 @@ export const POINT_EVENTS = [
   { id: 'rude_staff', label: 'Rude to service staff or others', points: -15, group: 'red' },
   { id: 'ex_talk', label: 'Talked constantly about an ex', points: -10, group: 'red' },
   { id: 'boundary_crossed', label: 'Crossed a boundary, pushy', points: -20, group: 'red' },
-  { id: 'lied', label: 'Lying or a major inconsistency', points: -25, group: 'red' }
+  { id: 'lied', label: 'Lying or a major inconsistency', points: -25, group: 'red' },
+  // Green/red flags: a tap of a flag, built-in or custom, once per person per flag.
+  { id: 'flagged_green', label: 'Tagged with a green flag', points: 5, group: 'vibe' },
+  { id: 'flagged_red', label: 'Tagged with a red flag', points: -10, group: 'red' }
 ]
 export const MAX_POINT_EVENTS = 500
 const POINT_EVENT_MAP = Object.fromEntries(POINT_EVENTS.map((e) => [e.id, e]))
@@ -280,6 +291,18 @@ export function pointEventsOf(person, dates = []) {
     else if (cm.followThrough === 'no') push(cm.date, 'lied')
     const hits = []; scanText(cm.text, hits); hits.forEach((k) => push(cm.date, k))
   }
+
+  // Green/red flags (built-in tags and custom ones you typed) are a structured field too: each one counts once,
+  // on the day it was first logged (or today, for older data with no such stamp), so tagging cannot be farmed for
+  // repeated points the way a long paragraph is capped to one hit per direction.
+  const flagDay = validDay(person?.flaggedOn) ? person.flaggedOn : localToday()
+  const builtinGreenTags = new Set(['communicator', 'consistent', 'dogs', 'funny', 'ambitious'])
+  const builtinRedTags = new Set(['inconsistent', 'slowreply', 'vague', 'selfabsorbed', 'pushy'])
+  ;(person?.tags || []).forEach((t) => {
+    if (builtinGreenTags.has(t)) push(flagDay, 'flagged_green')
+    else if (builtinRedTags.has(t)) push(flagDay, 'flagged_red')
+  })
+  customFlagsOf(person).forEach((f) => push(flagDay, f.kind === 'green' ? 'flagged_green' : 'flagged_red'))
 
   return out.slice(0, MAX_POINT_EVENTS)
 }
