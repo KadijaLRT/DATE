@@ -986,8 +986,17 @@ function DateSheet({ people, initial, initialKind = 'date', defaultPersonId, sto
       }
     } else {
       const payload = { date, status, type: hangoutType, text: text.trim().slice(0, MAX_HANGOUT_TEXT), feeling: feeling || null }
-      if (editing) store.updateHangout(personId, initial.refId, payload)
-      else store.addHangout(personId, payload)
+      if (editing) {
+        if (personId !== initial.personId) {
+          // Reassigned to someone else: move it rather than update it in place under the wrong person.
+          store.deleteHangout(initial.personId, initial.refId)
+          store.addHangout(personId, payload)
+        } else {
+          store.updateHangout(personId, initial.refId, payload)
+        }
+      } else {
+        store.addHangout(personId, payload)
+      }
       draft.done()
       onClose()
     }
@@ -996,7 +1005,7 @@ function DateSheet({ people, initial, initialKind = 'date', defaultPersonId, sto
   const remove = () => {
     if (!confirm(`Delete this ${kind === 'date' ? 'date' : 'time together'} record?`)) return
     if (kind === 'date') store.deleteDate(initial.id)
-    else store.deleteHangout(personId, initial.refId)
+    else store.deleteHangout(initial.personId, initial.refId)
     onClose()
   }
 
@@ -2346,7 +2355,7 @@ function PlanSection({ person, store, onLogDate }) {
                   <br />{pl.title || 'Planned date'}{pl.place ? ` at ${pl.place}` : ''}{pl.remind ? '' : ' (no reminder)'}
                   {n >= 0 && <RememberItems items={remember} limit={3} />}
                   {n < 0 && (
-                    <button type="button" className="btn ghost" style={{ marginTop: 6 }} onClick={onLogDate}>It happened: log the date</button>
+                    <button type="button" className="btn ghost" style={{ marginTop: 6 }} onClick={() => onLogDate('date')}>It happened: log the date</button>
                   )}
                 </span>
                 <button className="icon-btn" aria-label={`Remove plan on ${fmtDate(pl.date)}`} onClick={() => store.deletePlan(person.id, pl.id)}><X size={16} /></button>
@@ -2669,7 +2678,7 @@ function ReflectionForm({ value, onChange }) {
         <input className="in" maxLength={MAX_REFLECTION_NOTE} value={value.understand || ''} onChange={(e) => onChange({ ...value, understand: e.target.value })} /></label>
       <label className="field"><span>Journal (optional)</span>
         <textarea className="in" maxLength={MAX_REFLECTION_JOURNAL} value={value.journal || ''} onChange={(e) => onChange({ ...value, journal: e.target.value })} /></label>
-      <p className="hint" style={{ margin: 0 }}>Your answers count in Fit: your last three reflections, up to 4 points either way, inside the shared 10 point cap.</p>
+      <p className="hint" style={{ margin: 0 }}>Your answers count in Fit, along with how moments and time together felt: up to 8 points either way in the criteria match.</p>
     </div>
   )
 }
@@ -3034,7 +3043,7 @@ function SettingsSheet({ store, onClose, onLockNow }) {
 
       <div className="section">Profile sections</div>
       <p className="hint" style={{ marginTop: 0 }}>Hide the parts of a profile you do not use. Hiding a section only tucks it away: nothing is deleted, and it still counts in Fit.</p>
-      {[['flags', 'Green and red flags on profiles'], ['plans', 'Plan a date on profiles'], ['remember', 'Remember for next time on profiles'], ['prompts', 'Conversation prompts on profiles'], ['timeline', 'Timeline and contact log on profiles']].map(([k, label]) => (
+      {[['flags', 'Green and red flags on profiles'], ['plans', 'Plan a date on profiles'], ['remember', 'Remember for next time on profiles'], ['promises', 'Things they said and promises on profiles'], ['prompts', 'Conversation prompts on profiles'], ['timeline', 'Timeline and contact log on profiles'], ['intimacy', 'Intimacy tab on profiles']].map(([k, label]) => (
         <label key={k} className="switch"><input type="checkbox" checked={st.profile[k]} onChange={(e) => store.setSettings({ profile: { [k]: e.target.checked } })} /><span>{label}</span></label>
       ))}
 
@@ -3208,6 +3217,9 @@ function TimelineTab({ data, store, onOpenPerson, onOpenDate }) {
         onOpenDate={onOpenDate}
         onDelete={(e) => {
           if (e.kind === 'moment') store.deleteMoment(e.personId, e.refId)
+          else if (e.kind === 'hangout') store.deleteHangout(e.personId, e.refId)
+          else if (e.kind === 'promise') store.deletePromise(e.personId, e.refId)
+          else if (e.kind === 'commitment') store.deleteCommitment(e.personId, e.refId)
           else if (e.kind === 'plan') store.deletePlan(e.personId, e.refId)
           else store.deleteContact(e.personId, e.refId)
         }}

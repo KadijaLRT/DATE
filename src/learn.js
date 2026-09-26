@@ -246,14 +246,15 @@ export function checkinBias(checkins) {
   }
   for (const c of checkins || []) {
     for (const t of c.valued || []) bias[t] = (bias[t] || 0) + 1
-    for (const t of c.missing || []) bias[t] = (bias[t] || 0) + 1
+    for (const t of c.missing || []) bias[t] = (bias[t] || 0) - 1
   }
   const out = {}
   for (const t of Object.keys(bias)) {
     const n = counts[t]
     if (n < 2) continue // one mention is not a pattern
     const trust = n / (n + SHRINK_K)
-    out[t] = Math.min(0.5, 0.5 * trust)
+    const sign = bias[t] > 0 ? 1 : bias[t] < 0 ? -1 : 0
+    out[t] = sign * Math.min(0.5, 0.5 * trust)
   }
   return out
 }

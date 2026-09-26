@@ -1072,7 +1072,7 @@ const order = { bad: 0, warn: 1, good: 2, unknown: 3 }
 // Which of the four explanation sections a reason belongs to.
 export function sectionOf(r) {
   if (r.kind === 'unknown' && /nothing recorded yet/.test(r.text)) return 'unknowns'
-  if (/^(Effort and consistency|Vibe and compatibility|Red flags and disrespect|No point events logged)/.test(r.text)) return 'points'
+  if (/^(Effort and consistency|Vibe and compatibility|Red flags and disrespect|Nothing detected yet for effort)/.test(r.text)) return 'points'
   if (/^(How you have felt|Your dates with them average|Intimacy averages|Did not follow through on|Followed through on)/.test(r.text)) return 'experience'
   return 'compatibility'
 }
