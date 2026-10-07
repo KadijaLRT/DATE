@@ -121,6 +121,7 @@ export function migratePerson(p) {
   return {
     ...rest,
     status,
+    contactInfo: typeof rest.contactInfo === 'string' ? rest.contactInfo : '',
     contacts,
     tags: Array.isArray(rest.tags) ? rest.tags : [],
     customFlags: customFlagsOf(rest),
@@ -181,6 +182,7 @@ export function useStore() {
       age: '',
       job: '',
       met: '',
+      contactInfo: '',
       location: '',
       status: 'talking',
       end: null,

@@ -295,18 +295,72 @@ function VoiceBox({ onBullets }) {
 
 /* ---------- person sheets ---------- */
 
-function QuickAdd({ onSave, onClose }) {
+function QuickAdd({ onSave, onClose, eventMode = null }) {
   const [name, setName] = useState('')
-  const [met, setMet] = useState('')
+  const [contactInfo, setContactInfo] = useState('')
+  const [met, setMet] = useState(eventMode ? eventMode.met : '')
   const [status, setStatus] = useState('talking')
   const ref = useRef(null)
+  const contactRef = useRef(null)
 
   const save = () => {
     if (!name.trim()) {
       ref.current?.focus()
       return
     }
-    onSave({ name: name.trim(), met: met.trim(), status })
+    const tags = eventMode ? [eventMode.tag] : []
+    onSave({
+      name: name.trim(),
+      contactInfo: contactInfo.trim(),
+      met: met.trim(),
+      status,
+      metDate: eventMode ? eventMode.metDate : '',
+      tags
+    })
+  }
+
+  if (eventMode) {
+    return (
+      <Sheet title={eventMode.title} onClose={onClose}>
+        <p className="hint" style={{ margin: '0 0 16px' }}>
+          Fast capture for meeting people in person. Get the name and a way to reach them, everything else can wait.
+        </p>
+        <label className="field">
+          <span>Name</span>
+          <input
+            ref={ref}
+            className="in"
+            value={name}
+            autoFocus
+            placeholder="First name (or nickname)"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && contactRef.current?.focus()}
+          />
+        </label>
+        <label className="field">
+          <span>Contact info</span>
+          <input
+            ref={contactRef}
+            className="in"
+            value={contactInfo}
+            placeholder="Phone, @instagram, Snap…"
+            inputMode="text"
+            onChange={(e) => setContactInfo(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && save()}
+          />
+        </label>
+        <label className="field">
+          <span>How you met</span>
+          <input
+            className="in"
+            value={met}
+            onChange={(e) => setMet(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && save()}
+          />
+        </label>
+        <button className="btn primary" onClick={save}>Save and add another</button>
+      </Sheet>
+    )
   }
 
   return (
@@ -319,6 +373,16 @@ function QuickAdd({ onSave, onClose }) {
           value={name}
           autoFocus
           onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && save()}
+        />
+      </label>
+      <label className="field">
+        <span>Contact info</span>
+        <input
+          className="in"
+          value={contactInfo}
+          placeholder="Phone, @instagram, Snap…"
+          onChange={(e) => setContactInfo(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && save()}
         />
       </label>
@@ -809,6 +873,34 @@ function PersonSheet({ person, dates, store, onClose, onLogDate, onEditDate, onO
               <input className="in" type="date" aria-label="First met" max={todayDay()} value={person.metDate} onChange={(e) => set({ metDate: e.target.value })} />
             </label>
           </div>
+          <label className="field">
+            <span>Contact info</span>
+            <div className="two" style={{ alignItems: 'center' }}>
+              <input
+                className="in"
+                value={person.contactInfo || ''}
+                placeholder="Phone, @instagram, Snap…"
+                onChange={(e) => set({ contactInfo: e.target.value })}
+              />
+              {person.contactInfo && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={async (e) => {
+                    try {
+                      await navigator.clipboard.writeText(person.contactInfo)
+                      const btn = e.currentTarget
+                      const prev = btn.textContent
+                      btn.textContent = 'Copied'
+                      setTimeout(() => { btn.textContent = prev }, 1200)
+                    } catch { /* clipboard unavailable, ignore */ }
+                  }}
+                >
+                  Copy
+                </button>
+              )}
+            </div>
+          </label>
           <label className="field">
             <span>Started dating</span>
             <input className="in" type="date" aria-label="Started dating" max={todayDay()} value={person.relationshipStartDate} onChange={(e) => set({ relationshipStartDate: e.target.value })} />
@@ -1322,7 +1414,7 @@ function People({ people, dates, onOpen, store, onLogDate }) {
 
   const { list, ended, archived, endedTotal } = useMemo(() => {
     const matches = (p) =>
-      !query || [p.name, p.job, p.met, p.location, ...rememberOf(p).map((r) => r.text)].join(' ').toLowerCase().includes(query)
+      !query || [p.name, p.job, p.met, p.location, p.contactInfo, ...rememberOf(p).map((r) => r.text)].join(' ').toLowerCase().includes(query)
 
     let active = people.filter((p) => isActive(p) && matches(p))
     if (sort === 'contact') {
@@ -3260,6 +3352,11 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [lockAfter])
   const [sheet, setSheet] = useState(null) // {type, ...}
+  const [eventName, setEventName] = useState(() => localStorage.getItem('eventName.v1') || 'CAU Homecoming')
+  const [eventModeOn, setEventModeOn] = useState(() => localStorage.getItem('eventModeOn.v1') === '1')
+  const addCountRef = useRef(0)
+  useEffect(() => { localStorage.setItem('eventName.v1', eventName) }, [eventName])
+  useEffect(() => { localStorage.setItem('eventModeOn.v1', eventModeOn ? '1' : '0') }, [eventModeOn])
 
   const current = TABS.find((t) => t.id === tab)
   const person = sheet?.personId ? data.people.find((p) => p.id === sheet.personId) : null
@@ -3276,9 +3373,16 @@ export default function App() {
     if (d) setSheet({ type: 'date', date: d, reflect })
   }
 
-  const fabLabel = tab === 'dates' ? 'Log date' : 'Add match'
+  const fabLabel = tab === 'dates' ? 'Log date' : eventModeOn ? `Add from ${eventName}` : 'Add match'
+  const eventTag = 'event:' + eventName.trim().toLowerCase().replace(/\s+/g, '-')
   const onFab = () =>
-    setSheet(tab === 'dates' ? { type: 'date' } : { type: 'quick' })
+    setSheet(
+      tab === 'dates'
+        ? { type: 'date' }
+        : eventModeOn
+          ? { type: 'quick', eventKey: addCountRef.current++, eventMode: { title: eventName, met: eventName, metDate: todayDay(), tag: eventTag } }
+          : { type: 'quick' }
+    )
 
   if (locked && hasPin()) return <LockScreen onUnlock={() => setLocked(false)} />
 
@@ -3299,6 +3403,24 @@ export default function App() {
       {store.saveFailed && (
         <div className="savefail" role="alert">
           Your browser could not save your latest changes, most likely because its storage is full. Download a backup from Settings now, then remove some photos or old entries.
+        </div>
+      )}
+
+      {tab === 'roster' && (
+        <div className="eventbar">
+          <label className="eventbar-toggle">
+            <input type="checkbox" checked={eventModeOn} onChange={(e) => setEventModeOn(e.target.checked)} />
+            Event mode
+          </label>
+          {eventModeOn && (
+            <input
+              className="in eventbar-name"
+              value={eventName}
+              onChange={(e) => setEventName(e.target.value)}
+              aria-label="Event name"
+              placeholder="Event name"
+            />
+          )}
         </div>
       )}
 
@@ -3332,9 +3454,15 @@ export default function App() {
 
       {sheet?.type === 'quick' && (
         <QuickAdd
+          key={sheet.eventKey ?? 'single'}
+          eventMode={sheet.eventMode || null}
           onClose={() => setSheet(null)}
           onSave={(p) => {
             store.addPerson(p)
+            if (sheet.eventMode) {
+              setSheet({ ...sheet, eventKey: addCountRef.current++ })
+              return
+            }
             setSheet(null)
           }}
         />

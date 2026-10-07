@@ -214,6 +214,9 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
 .toast button { min-height: 44px; }
 .savefail { background: #fde3e8; color: #6b1229; border-radius: var(--r-md); padding: var(--s3) var(--s4); margin: 0 var(--s5) var(--s2); font-size: var(--fs-small); font-weight: 500; }
 .lockscreen .warn { color: #ffd0dc; }
+.eventbar { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s5); background: var(--sage-tint, #eaf3ea); border-radius: var(--r-md); margin: 0 var(--s5) var(--s3); flex-wrap: wrap; }
+.eventbar-toggle { display: flex; align-items: center; gap: var(--s2); font-weight: 600; font-size: var(--fs-small); white-space: nowrap; }
+.eventbar-name { flex: 1 1 160px; min-width: 120px; }
 
 /* ---------- fit / details disclosure ---------- */
 details.fitfold, details.fold { border-radius: var(--r-lg); }
